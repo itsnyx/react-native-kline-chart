@@ -1,0 +1,1092 @@
+//
+//  HTDrawView.swift
+//  Base64
+//
+//  Created by hublot on 2020/8/26.
+//
+
+import UIKit
+
+class HTDrawContext {
+    
+    var configManager: HTKLineConfigManager
+    
+    weak var klineView: HTKLineView?
+    
+
+    lazy var drawItemList: [HTDrawItem] = {
+        let drawItemList = [HTDrawItem]()
+        return drawItemList
+    }()
+    
+    init(_ klineView: HTKLineView, _ configManager: HTKLineConfigManager) {
+        self.klineView = klineView
+        self.configManager = configManager
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+    
+    var breakTouch = false
+    // Tracks whether the user is currently moving an existing drawing item.
+    private var isMovingExistingItem = false
+    
+    func touchesGesture(_ location: CGPoint, _ translation: CGPoint, _ state: UIGestureRecognizerState) {
+        guard let klineView = klineView, breakTouch == false else {
+            if state == .ended {
+                breakTouch = false
+            }
+            return
+        }
+
+        // If we were moving an existing item and the gesture just ended, fire a single move callback.
+        if state == .ended, isMovingExistingItem,
+           let moveItem = HTDrawItem.findTouchMoveItem(drawItemList),
+           let moveItemIndex = drawItemList.index(of: moveItem) {
+            configManager.onDrawItemMove?(moveItem, moveItemIndex)
+            isMovingExistingItem = false
+            setNeedsDisplay()
+            return
+        }
+        switch state {
+        case .began:
+            if (configManager.shouldReloadDrawItemIndex > HTDrawState.showContext.rawValue) {
+                let selectedDrawItem = drawItemList[configManager.shouldReloadDrawItemIndex]
+                if (selectedDrawItem.pointList.count >= selectedDrawItem.drawType.count) {
+                    if (HTDrawItem.canResponseLocation(drawItemList, location, klineView) != selectedDrawItem) {
+                        configManager.onDrawItemDidTouch?(nil, HTDrawState.showPencil.rawValue)
+                        breakTouch = true
+                        setNeedsDisplay()
+                        return
+                    }
+                }
+//            } else if (configManager.shouldReloadDrawItemIndex > HTDrawState.showPencil.rawValue) {
+//                let selectedDrawItem = HTDrawItem.canResponseLocation(drawItemList, location, translation, state, klineView)
+//                if let selectedDrawItem = selectedDrawItem, let selectedDrawItemIndex = drawItemList.index(of: selectedDrawItem) {
+//                    configManager.onDrawItemDidTouch?(selectedDrawItem, selectedDrawItemIndex)
+//                    setNeedsDisplay()
+//                    return
+//                } else {
+//                    if HTDrawItem.canResponseTouch(drawItemList, location, translation, state, klineView) {
+//                        setNeedsDisplay()
+//                        return
+//                    }
+//                }
+            }
+        case .changed:
+            break
+        case .ended:
+            break
+        default:
+            break
+        }
+        if HTDrawItem.canResponseTouch(drawItemList, location, translation, state, klineView) {
+            if state == .began,
+               let moveItem = HTDrawItem.findTouchMoveItem(drawItemList),
+               let moveItemIndex = drawItemList.index(of: moveItem) {
+                // User started interacting with an existing drawing.
+                isMovingExistingItem = true
+                configManager.onDrawItemDidTouch?(moveItem, moveItemIndex)
+            }
+            setNeedsDisplay()
+            return
+        }
+        if (configManager.drawType == .none) {
+            return
+        }
+        
+//        let moveDrawItem = HTDrawItem.findTouchMoveItem(drawItemList)
+//        let canResponse = false
+//        if (configManager.shouldReloadDrawItemIndex == HTDrawState.showPencil.rawValue && state == .ended && translation == CGPoint.zero) {
+//            if moveDrawItem != nil {
+//                configManager.shouldReloadDrawItemIndex = HTDrawState
+//            }
+//        }
+//
+//
+//        // 能够处理点击, 改变拖动的点, 重新绘制
+//        if let klineView = klineView, ) {
+//            // 如果移动了或者点击了, 去弹起配置弹窗
+//            if let moveDrawItem = moveDrawItem, let moveDrawItemIndex = drawItemList.firstIndex(of: moveDrawItem), state != .changed {
+//                configManager.onDrawItemDidTouch?(moveDrawItem, moveDrawItemIndex)
+//            }
+//            setNeedsDisplay()
+//            return
+//        }
+    
+        
+        let drawItem = drawItemList.last
+        switch state {
+        case .began:
+            if (drawItem == nil || (drawItem?.pointList.count ?? 0) >= (drawItem?.drawType.count ?? 0)) {
+                var startLocation = location
+                // For candleMarker, ignore the tapped Y-value and snap to the
+                // bottom of the corresponding candle body (min(open, close)).
+                if configManager.drawType == .candleMarker {
+                    startLocation = CGPoint(
+                        x: location.x,
+                        y: bodyBottomValue(forX: location.x)
+                    )
+                }
+                let drawItem = HTDrawItem.init(configManager.drawType, startLocation)
+                drawItem.drawColor = configManager.drawColor
+                drawItem.drawLineHeight = configManager.drawLineHeight
+                drawItem.drawDashWidth = configManager.drawDashWidth
+                drawItem.drawDashSpace = configManager.drawDashSpace
+                drawItem.textColor = configManager.drawTextColor
+                drawItem.textBackgroundColor = configManager.drawTextBackgroundColor
+                drawItem.textCornerRadius = configManager.drawTextCornerRadius
+                // Initialize per-item text font size from the current global candle text size,
+                // but make it a bit larger by default (2x).
+                drawItem.textFontSize = configManager.candleTextFontSize * 2
+                
+                drawItemList.append(drawItem)
+                configManager.onDrawItemDidTouch?(drawItem, drawItemList.count - 1)
+            } else {
+                drawItem?.pointList.append(location)
+            }
+        case .ended, .changed:
+            let length = drawItem?.pointList.count ?? 0
+            if length >= 1 {
+                let index = length - 1
+                var effectiveLocation = location
+                // For candleMarker, always anchor vertically to the candle body
+                // at the given timestamp so Y is derived from the candle data
+                // instead of the raw touch or serialized value. When position is
+                // "top", use the top of the body; otherwise use the bottom.
+                if drawItem?.drawType == .candleMarker {
+                    let isTop = drawItem?.position.lowercased() == "top"
+                    effectiveLocation.y = isTop
+                        ? bodyTopValue(forX: location.x)
+                        : bodyBottomValue(forX: location.x)
+                }
+                drawItem?.pointList[index] = effectiveLocation
+                // 最后一个点起笔
+                if case .ended = state, let drawItem = drawItem {
+                    // When finishing a drag while creating/editing a drawing, report the final position once.
+                    configManager.onDrawItemMove?(drawItem, drawItemList.count - 1)
+                    configManager.onDrawPointComplete?(drawItem, drawItemList.count - 1)
+                    if index == drawItem.drawType.count - 1 {
+                        configManager.onDrawItemComplete?(drawItem, drawItemList.count - 1)
+                        if configManager.drawShouldContinue {
+                            configManager.shouldReloadDrawItemIndex = HTDrawState.showContext.rawValue
+                        } else {
+                            configManager.drawType = .none
+                        }
+                    }
+                }
+            }
+        default:
+            break
+        }
+        setNeedsDisplay()
+    }
+    
+    func fixDrawItemList() {
+        guard let drawItem = drawItemList.last else {
+            return
+        }
+        if drawItem.pointList.count < drawItem.drawType.count {
+            drawItemList.removeLast()
+        }
+        setNeedsDisplay()
+    }
+    
+    func clearDrawItemList() {
+        drawItemList = []
+        setNeedsDisplay()
+    }
+    
+    func drawLine(_ context: CGContext, _ drawItem: HTDrawItem, _ startPoint: CGPoint, _ endPoint: CGPoint) {
+        // Guard against NaN/infinity values that would crash Core Graphics
+        guard startPoint.x.isFinite && startPoint.y.isFinite &&
+              endPoint.x.isFinite && endPoint.y.isFinite else {
+            return
+        }
+        context.move(to: startPoint)
+        context.addLine(to: endPoint)
+        context.setStrokeColor(drawItem.drawColor.cgColor)
+        context.setLineWidth(drawItem.drawLineHeight)
+        var dashList = [drawItem.drawDashWidth, drawItem.drawDashSpace]
+        if drawItem.drawDashSpace == 0 {
+            dashList = []
+        }
+        context.setLineDash(phase: 0, lengths: dashList)
+        context.drawPath(using: .stroke)
+    }
+
+    /// Return the id (timestamp) of the candle closest to the given X-value.
+    /// Used to snap a candleMarker's horizontal position to the candle center.
+    private func closestCandleId(forX value: CGFloat) -> CGFloat {
+        guard !configManager.modelArray.isEmpty else { return value }
+        let dValue = Double(value)
+        var closest = configManager.modelArray[0]
+        var minDiff = abs(closest.id - dValue)
+        for model in configManager.modelArray {
+            let diff = abs(model.id - dValue)
+            if diff < minDiff {
+                minDiff = diff
+                closest = model
+            }
+        }
+        return CGFloat(closest.id)
+    }
+
+    /// For a given X-value (timestamp), find the candle whose id is closest and
+    /// return the candle's low in value-space.
+    /// This is used to anchor candleMarker pointers to the corresponding candle
+    /// when position == "bottom".
+    private func bodyBottomValue(forX value: CGFloat) -> CGFloat {
+        guard !configManager.modelArray.isEmpty else {
+            return value
+        }
+        let dValue = Double(value)
+        var closest = configManager.modelArray[0]
+        var minDiff = abs(closest.id - dValue)
+        for model in configManager.modelArray {
+            let diff = abs(model.id - dValue)
+            if diff < minDiff {
+                minDiff = diff
+                closest = model
+            }
+        }
+        return closest.low
+    }
+
+    /// For a given X-value (timestamp), find the candle whose id is closest and
+    /// return the candle's high in value-space.
+    /// This is used to anchor candleMarker pointers when position == "top".
+    private func bodyTopValue(forX value: CGFloat) -> CGFloat {
+        guard !configManager.modelArray.isEmpty else {
+            return value
+        }
+        let dValue = Double(value)
+        var closest = configManager.modelArray[0]
+        var minDiff = abs(closest.id - dValue)
+        for model in configManager.modelArray {
+            let diff = abs(model.id - dValue)
+            if diff < minDiff {
+                minDiff = diff
+                closest = model
+            }
+        }
+        return closest.high
+    }
+    
+    func setNeedsDisplay() {
+        klineView?.setNeedsDisplay()
+    }
+
+    func drawMapper(_ context: CGContext, _ drawItem: HTDrawItem, _ index: Int, _ itemIndex: Int) {
+        guard let klineView = klineView else {
+            return
+        }
+        let point = drawItem.pointList[index]
+
+        // Candle marker: bubble with text and a pointer to a specific candle/price.
+        if drawItem.drawType == .candleMarker {
+            // If the marker's anchor candle is outside the current visible candle range,
+            // don't draw it at all (avoid "sticking" to left/right edges due to clamping).
+            if !configManager.modelArray.isEmpty {
+                // Find the closest candle index to the marker's X (timestamp). We use an index-based
+                // test rather than raw timestamp bounds to avoid edge cases where the marker's `x`
+                // is slightly outside the visible-id range but still belongs to the edge candle.
+                var closestIndex = 0
+                var minDiff = abs(configManager.modelArray[0].id - Double(point.x))
+                for (i, model) in configManager.modelArray.enumerated() {
+                    let diff = abs(model.id - Double(point.x))
+                    if diff < minDiff {
+                        minDiff = diff
+                        closestIndex = i
+                    }
+                }
+
+                let startIndex = max(0, min(klineView.visibleRange.lowerBound, configManager.modelArray.count - 1))
+                let endIndex = max(0, min(klineView.visibleRange.upperBound, configManager.modelArray.count - 1))
+                let minIndex = min(startIndex, endIndex)
+                let maxIndex = max(startIndex, endIndex)
+                if closestIndex < minIndex || closestIndex > maxIndex {
+                    return
+                }
+            }
+
+            // Snap the X to the exact center of the closest candle so the marker
+            // always appears centered on its candle regardless of where the touch landed.
+            let snappedX = closestCandleId(forX: point.x)
+            let snappedPoint = CGPoint(x: snappedX, y: point.y)
+            let viewPoint = klineView.viewPointFromValuePoint(snappedPoint)
+
+            // Get zoom scale to make marker smaller when zooming out (but not larger when zooming in)
+            let zoomScale = klineView.scale
+            let scale = min(zoomScale, 1.0)
+
+            let baseFontSize = drawItem.textFontSize > 0
+                ? drawItem.textFontSize
+                : configManager.candleTextFontSize
+            let fontSize = baseFontSize * scale
+            let font = configManager.createFont(fontSize)
+            let text = drawItem.text as NSString
+
+            let paddingH: CGFloat = 6 * scale
+            let paddingV: CGFloat = 6 * scale
+            let gap: CGFloat = 4 * scale
+            let triangleHeight: CGFloat = 6 * scale
+            let triangleHalfWidth: CGFloat = 6 * scale
+            let marginX: CGFloat = 4 * scale
+
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: font,
+                .foregroundColor: drawItem.textColor
+            ]
+            let textSize = text.size(withAttributes: attributes)
+            let bubbleWidth = textSize.width + paddingH * 2
+            let bubbleHeight = textSize.height + paddingV * 2
+
+            var centerX = viewPoint.x
+            var left = centerX - bubbleWidth / 2
+            var right = centerX + bubbleWidth / 2
+
+            // Clamp bubble within bounds and adjust center if needed.
+            if left < marginX {
+                let shift = marginX - left
+                left += shift
+                right += shift
+                centerX += shift
+            }
+            let maxRight = klineView.bounds.size.width - marginX
+            if right > maxRight {
+                let shift = right - maxRight
+                left -= shift
+                right -= shift
+                centerX -= shift
+            }
+
+            let isTop = drawItem.position.lowercased() == "top"
+            let candleMargin: CGFloat = 4 * scale
+            var tipY: CGFloat
+            var triangleBaseY: CGFloat
+            var rect: CGRect
+            if isTop {
+                tipY = viewPoint.y - candleMargin
+                triangleBaseY = tipY - gap
+                let bottom = triangleBaseY - triangleHeight
+                let top = bottom - bubbleHeight
+                rect = CGRect(
+                    x: left,
+                    y: top,
+                    width: bubbleWidth,
+                    height: bubbleHeight
+                )
+            } else {
+                tipY = viewPoint.y + candleMargin
+                triangleBaseY = tipY + gap
+                rect = CGRect(
+                    x: left,
+                    y: triangleBaseY + triangleHeight,
+                    width: bubbleWidth,
+                    height: bubbleHeight
+                )
+            }
+
+            // Clamp vertically inside the view so bottom markers stay visible
+            // even when the candle is near the bottom of the chart.
+            let marginY: CGFloat = 4 * scale
+            let viewHeight = klineView.bounds.size.height
+            if rect.minY < marginY {
+                let shift = marginY - rect.minY
+                rect.origin.y += shift
+                triangleBaseY += shift
+                tipY += shift
+            }
+            if rect.maxY > viewHeight - marginY {
+                let shift = rect.maxY - (viewHeight - marginY)
+                rect.origin.y -= shift
+                triangleBaseY -= shift
+                tipY -= shift
+            }
+
+            context.saveGState()
+
+            // Bubble background
+            context.setFillColor(drawItem.textBackgroundColor.cgColor)
+            let radius = drawItem.textCornerRadius
+            let bubblePath = UIBezierPath(roundedRect: rect, cornerRadius: radius)
+            context.addPath(bubblePath.cgPath)
+            context.drawPath(using: .fill)
+
+            // Pointer triangle from bubble to candle/price
+            let trianglePath = UIBezierPath()
+            trianglePath.move(to: CGPoint(x: viewPoint.x, y: tipY))
+            trianglePath.addLine(to: CGPoint(x: centerX - triangleHalfWidth, y: triangleBaseY))
+            trianglePath.addLine(to: CGPoint(x: centerX + triangleHalfWidth, y: triangleBaseY))
+            trianglePath.close()
+            context.setFillColor(drawItem.textBackgroundColor.cgColor)
+            context.addPath(trianglePath.cgPath)
+            context.drawPath(using: .fill)
+
+            // Text inside bubble
+            let textPoint = CGPoint(
+                x: rect.minX + paddingH,
+                y: rect.minY + paddingV
+            )
+            text.draw(at: textPoint, withAttributes: attributes)
+
+            context.restoreGState()
+
+            if itemIndex == configManager.shouldReloadDrawItemIndex {
+                context.addArc(center: viewPoint, radius: 10, startAngle: 0, endAngle: CGFloat(Double.pi * 2.0), clockwise: true)
+                context.setFillColor(drawItem.drawColor.withAlphaComponent(0.5).cgColor)
+                context.drawPath(using: .fill)
+                context.addArc(center: viewPoint, radius: 4, startAngle: 0, endAngle: CGFloat(Double.pi * 2.0), clockwise: true)
+                context.setFillColor(drawItem.drawColor.cgColor)
+                context.drawPath(using: .fill)
+            }
+            return
+        }
+
+        // Global price-level horizontal line: spans full chart width at a given price.
+        if drawItem.drawType == .globalHorizontalLine ||
+            drawItem.drawType == .globalHorizontalLineWithLabel {
+            // Hide the line when its price is outside the current visible main (price)
+            // pane range. This prevents it from "sticking" and drawing into the
+            // volume/child panes when off-range.
+            let priceValue = point.y
+            let minPrice = min(klineView.mainMinMaxRange.lowerBound, klineView.mainMinMaxRange.upperBound)
+            let maxPrice = max(klineView.mainMinMaxRange.lowerBound, klineView.mainMinMaxRange.upperBound)
+            if priceValue < minPrice || priceValue > maxPrice {
+                return
+            }
+
+            // Clip to the main (price) pane so this tool can never render under volume.
+            let mainRect = CGRect(
+                x: 0,
+                y: klineView.mainBaseY,
+                width: klineView.bounds.size.width,
+                height: klineView.mainHeight
+            )
+            if mainRect.height <= 0 || mainRect.width <= 0 {
+                return
+            }
+
+            let viewPoint = klineView.viewPointFromValuePoint(point)
+
+            context.saveGState()
+            context.clip(to: mainRect)
+
+            let font = configManager.createFont(configManager.candleTextFontSize)
+            let paddingH: CGFloat = 6
+            let paddingV: CGFloat = 4
+            let marginX: CGFloat = 4
+            let centerY = viewPoint.y
+
+            var lineColor = drawItem.drawColor
+            if let lastCandle = configManager.modelArray.last {
+                lineColor = lastCandle.close >= lastCandle.open
+                    ? configManager.increaseColor
+                    : configManager.decreaseColor
+            }
+
+            // 1) Draw the dashed line across the full width first (with reduced opacity).
+            //    Labels drawn afterwards will paint their opaque backgrounds on top.
+            context.setStrokeColor(lineColor.withAlphaComponent(0.3).cgColor)
+            context.setLineWidth(drawItem.drawLineHeight)
+            var dashList = [drawItem.drawDashWidth, drawItem.drawDashSpace]
+            if drawItem.drawDashSpace == 0 {
+                dashList = []
+            }
+            context.setLineDash(phase: 0, lengths: dashList)
+            context.move(to: CGPoint(x: 0, y: viewPoint.y))
+            context.addLine(to: CGPoint(x: klineView.bounds.size.width, y: viewPoint.y))
+            context.drawPath(using: .stroke)
+
+            // Reset to solid for everything below.
+            context.setLineDash(phase: 0, lengths: [])
+
+            // Labels: optional custom text on the left and price on the right.
+            let priceText = configManager.precision(priceValue, configManager.price)
+            let leftText = (drawItem.text.isEmpty ? nil : drawItem.text)
+
+            let priceAttributes: [NSAttributedString.Key: Any] = [
+                .font: font,
+                .foregroundColor: lineColor
+            ]
+            let leftAttributes: [NSAttributedString.Key: Any] = [
+                .font: font,
+                .foregroundColor: (drawItem.textColor)
+            ]
+
+            let priceSize = (priceText as NSString).size(withAttributes: priceAttributes)
+
+            let viewH = mainRect.height
+            let borderWidth: CGFloat = 1
+            let clampTop: (CGFloat, CGFloat) -> CGFloat = { top, height in
+                if height >= viewH { return mainRect.minY }
+                return min(max(top, mainRect.minY), mainRect.maxY - height)
+            }
+
+            // 2) Left label (drawn on top of the dashed line — its opaque background hides the line beneath).
+            if drawItem.drawType == .globalHorizontalLineWithLabel, let label = leftText {
+                let leftSize = (label as NSString).size(withAttributes: leftAttributes)
+                let rectHeight = leftSize.height + paddingV * 2
+                let top = clampTop(centerY - rectHeight / 2, rectHeight)
+                let leftRect = CGRect(
+                    x: marginX,
+                    y: top,
+                    width: leftSize.width + paddingH * 2,
+                    height: rectHeight
+                )
+
+                // Opaque background (covers the dashed line underneath).
+                context.setFillColor(drawItem.textBackgroundColor.cgColor)
+                let radius = leftRect.height / 4
+                let path = UIBezierPath(roundedRect: leftRect, cornerRadius: radius)
+                context.addPath(path.cgPath)
+                context.drawPath(using: .fill)
+
+                // Solid border.
+                context.setLineWidth(borderWidth)
+                context.setStrokeColor(drawItem.drawColor.cgColor)
+                context.addPath(path.cgPath)
+                context.drawPath(using: .stroke)
+
+                // Text.
+                let textPoint = CGPoint(x: leftRect.minX + paddingH, y: leftRect.minY + paddingV)
+                (label as NSString).draw(at: textPoint, withAttributes: leftAttributes)
+            }
+
+            // 3) Right price label (flush to the right edge, no margin — drawn on top of the dashed line).
+            let rightRectWidth = priceSize.width + paddingH * 2
+            let rightRectLeft = klineView.bounds.size.width - rightRectWidth
+            let rightRectHeight = priceSize.height + paddingV * 2
+            let rightTop = clampTop(centerY - rightRectHeight / 2, rightRectHeight)
+            let priceRect = CGRect(
+                x: rightRectLeft,
+                y: rightTop,
+                width: rightRectWidth,
+                height: rightRectHeight
+            )
+
+            // Opaque background (covers the dashed line underneath).
+            context.setFillColor(configManager.panelBackgroundColor.cgColor)
+            let priceRadius = priceRect.height / 4
+            let pricePath = UIBezierPath(roundedRect: priceRect, cornerRadius: priceRadius)
+            context.addPath(pricePath.cgPath)
+            context.drawPath(using: .fill)
+
+            // Solid border.
+            context.setLineWidth(borderWidth)
+            context.setStrokeColor(lineColor.cgColor)
+            context.addPath(pricePath.cgPath)
+            context.drawPath(using: .stroke)
+
+            // Price text.
+            let priceTextPoint = CGPoint(
+                x: priceRect.minX + paddingH,
+                y: priceRect.minY + paddingV
+            )
+            (priceText as NSString).draw(at: priceTextPoint, withAttributes: priceAttributes)
+
+            if itemIndex == configManager.shouldReloadDrawItemIndex {
+                context.addArc(center: viewPoint, radius: 10, startAngle: 0, endAngle: CGFloat(Double.pi * 2.0), clockwise: true)
+                context.setFillColor(drawItem.drawColor.withAlphaComponent(0.5).cgColor)
+                context.drawPath(using: .fill)
+                context.addArc(center: viewPoint, radius: 4, startAngle: 0, endAngle: CGFloat(Double.pi * 2.0), clockwise: true)
+                context.setFillColor(drawItem.drawColor.cgColor)
+                context.drawPath(using: .fill)
+            }
+            context.restoreGState()
+            return
+        }
+
+        // Right horizontal line with label: starts from selected X and extends to right edge.
+        if drawItem.drawType == .rightHorizontalLineWithLabel {
+            // Hide the line when its price is outside the current visible main (price)
+            // pane range.
+            let priceValue = point.y
+            let minPrice = min(klineView.mainMinMaxRange.lowerBound, klineView.mainMinMaxRange.upperBound)
+            let maxPrice = max(klineView.mainMinMaxRange.lowerBound, klineView.mainMinMaxRange.upperBound)
+            if priceValue < minPrice || priceValue > maxPrice {
+                return
+            }
+
+            // Clip to the main (price) pane so this tool can never render under volume.
+            let mainRect = CGRect(
+                x: 0,
+                y: klineView.mainBaseY,
+                width: klineView.bounds.size.width,
+                height: klineView.mainHeight
+            )
+            if mainRect.height <= 0 || mainRect.width <= 0 {
+                return
+            }
+
+            let viewPoint = klineView.viewPointFromValuePoint(point)
+            // If the anchor X is completely to the right of the viewport, the segment
+            // [anchorX, +inf) doesn't intersect the visible area at all.
+            if viewPoint.x > klineView.bounds.size.width {
+                return
+            }
+            // Line starts from anchor X and extends to the right edge
+            let start = CGPoint(x: viewPoint.x, y: viewPoint.y)
+            let end = CGPoint(x: klineView.bounds.size.width, y: viewPoint.y)
+
+            context.saveGState()
+            context.clip(to: mainRect)
+
+            // 1) Draw the dashed line with reduced opacity (labels painted on top will cover it).
+            context.setStrokeColor(drawItem.drawColor.withAlphaComponent(0.3).cgColor)
+            context.setLineWidth(drawItem.drawLineHeight)
+            var dashList = [drawItem.drawDashWidth, drawItem.drawDashSpace]
+            if drawItem.drawDashSpace == 0 {
+                dashList = []
+            }
+            context.setLineDash(phase: 0, lengths: dashList)
+            context.move(to: start)
+            context.addLine(to: end)
+            context.drawPath(using: .stroke)
+
+            // Reset to solid for all label borders below.
+            context.setLineDash(phase: 0, lengths: [])
+
+            // Labels: optional custom text at the anchor and price on the right.
+            let priceText = configManager.precision(priceValue, configManager.price)
+            let leftText = (drawItem.text.isEmpty ? nil : drawItem.text)
+
+            let font = configManager.createFont(configManager.candleTextFontSize)
+
+            let priceAttributes: [NSAttributedString.Key: Any] = [
+                .font: font,
+                .foregroundColor: configManager.textColor
+            ]
+            let leftAttributes: [NSAttributedString.Key: Any] = [
+                .font: font,
+                .foregroundColor: (drawItem.textColor)
+            ]
+
+            let priceSize = (priceText as NSString).size(withAttributes: priceAttributes)
+            let paddingH: CGFloat = 6
+            let paddingV: CGFloat = 4
+            let marginX: CGFloat = 4
+
+            // Place labels centered on the line (vertically).
+            let centerY = viewPoint.y
+            let viewH = mainRect.height
+            let borderWidth: CGFloat = 1
+            let clampTop: (CGFloat, CGFloat) -> CGFloat = { top, height in
+                if height >= viewH { return mainRect.minY }
+                return min(max(top, mainRect.minY), mainRect.maxY - height)
+            }
+
+            // 2) Left label (custom text) at the anchor X position.
+            if let label = leftText {
+                let leftSize = (label as NSString).size(withAttributes: leftAttributes)
+                let rectHeight = leftSize.height + paddingV * 2
+                let top = clampTop(centerY - rectHeight / 2, rectHeight)
+                let rectWidth = leftSize.width + paddingH * 2
+
+                // "Sticky left": if anchorX < 0, keep label at the viewport's left edge.
+                var left = max(viewPoint.x, mainRect.minX) + marginX
+
+                // Avoid overlapping the right-side price bubble.
+                let rightRectWidth = priceSize.width + paddingH * 2
+                let rightRectLeft = klineView.bounds.size.width - rightRectWidth
+                let maxLeft = rightRectLeft - marginX - rectWidth
+                if left > maxLeft {
+                    left = maxLeft
+                }
+                let rect = CGRect(
+                    x: left,
+                    y: top,
+                    width: rectWidth,
+                    height: rectHeight
+                )
+
+                // Opaque background (covers the dashed line underneath).
+                context.setFillColor(drawItem.textBackgroundColor.cgColor)
+                let radius = rect.height / 4
+                let path = UIBezierPath(roundedRect: rect, cornerRadius: radius)
+                context.addPath(path.cgPath)
+                context.drawPath(using: .fill)
+
+                // Solid border.
+                context.setLineWidth(borderWidth)
+                context.setStrokeColor(drawItem.drawColor.cgColor)
+                context.addPath(path.cgPath)
+                context.drawPath(using: .stroke)
+
+                let textPoint = CGPoint(x: rect.minX + paddingH, y: rect.minY + paddingV)
+                (label as NSString).draw(at: textPoint, withAttributes: leftAttributes)
+            }
+
+            // 3) Right price label (flush to the right edge, no margin).
+            let rightRectWidth = priceSize.width + paddingH * 2
+            let rightRectLeft = klineView.bounds.size.width - rightRectWidth
+            let rightRectHeight = priceSize.height + paddingV * 2
+            let rightTop = clampTop(centerY - rightRectHeight / 2, rightRectHeight)
+            let priceRect = CGRect(
+                x: rightRectLeft,
+                y: rightTop,
+                width: rightRectWidth,
+                height: rightRectHeight
+            )
+
+            // Opaque background (covers the dashed line underneath).
+            context.setFillColor(configManager.panelBackgroundColor.cgColor)
+            let priceRadius = priceRect.height / 4
+            let pricePath = UIBezierPath(roundedRect: priceRect, cornerRadius: priceRadius)
+            context.addPath(pricePath.cgPath)
+            context.drawPath(using: .fill)
+
+            // Solid border.
+            context.setLineWidth(borderWidth)
+            context.setStrokeColor(drawItem.drawColor.cgColor)
+            context.addPath(pricePath.cgPath)
+            context.drawPath(using: .stroke)
+
+            let priceTextPoint = CGPoint(
+                x: priceRect.minX + paddingH,
+                y: priceRect.minY + paddingV
+            )
+            (priceText as NSString).draw(at: priceTextPoint, withAttributes: priceAttributes)
+
+            if itemIndex == configManager.shouldReloadDrawItemIndex {
+                context.addArc(center: viewPoint, radius: 10, startAngle: 0, endAngle: CGFloat(Double.pi * 2.0), clockwise: true)
+                context.setFillColor(drawItem.drawColor.withAlphaComponent(0.5).cgColor)
+                context.drawPath(using: .fill)
+                context.addArc(center: viewPoint, radius: 4, startAngle: 0, endAngle: CGFloat(Double.pi * 2.0), clockwise: true)
+                context.setFillColor(drawItem.drawColor.cgColor)
+                context.drawPath(using: .fill)
+            }
+            context.restoreGState()
+            return
+        }
+
+        // Global time-level vertical line: spans full chart height at a given timestamp.
+        if case .globalVerticalLine = drawItem.drawType {
+            let viewPoint = klineView.viewPointFromValuePoint(point)
+            let start = CGPoint(x: viewPoint.x, y: 0)
+            let end = CGPoint(x: viewPoint.x, y: klineView.bounds.size.height)
+
+            context.saveGState()
+            context.setStrokeColor(drawItem.drawColor.withAlphaComponent(0.35).cgColor)
+            context.setLineWidth(drawItem.drawLineHeight)
+            var dashList = [drawItem.drawDashWidth, drawItem.drawDashSpace]
+            if drawItem.drawDashSpace == 0 {
+                dashList = []
+            }
+            context.setLineDash(phase: 0, lengths: dashList)
+            context.move(to: start)
+            context.addLine(to: end)
+            context.drawPath(using: .stroke)
+            context.restoreGState()
+
+            if itemIndex == configManager.shouldReloadDrawItemIndex {
+                context.addArc(center: viewPoint, radius: 10, startAngle: 0, endAngle: CGFloat(Double.pi * 2.0), clockwise: true)
+                context.setFillColor(drawItem.drawColor.withAlphaComponent(0.5).cgColor)
+                context.drawPath(using: .fill)
+                context.addArc(center: viewPoint, radius: 4, startAngle: 0, endAngle: CGFloat(Double.pi * 2.0), clockwise: true)
+                context.setFillColor(drawItem.drawColor.cgColor)
+                context.drawPath(using: .fill)
+            }
+            return
+        }
+
+        // Ruler tool: measures distance between two points with price and time difference.
+        if drawItem.drawType == .ruler && index == 1 && drawItem.pointList.count >= 2 {
+            let startPoint = drawItem.pointList[0]
+            let endPoint = drawItem.pointList[1]
+            
+            let startViewPoint = klineView.viewPointFromValuePoint(startPoint)
+            let endViewPoint = klineView.viewPointFromValuePoint(endPoint)
+            
+            // Calculate price difference
+            let priceDiff = endPoint.y - startPoint.y
+            let pricePercent = startPoint.y != 0 ? (priceDiff / startPoint.y) * 100 : 0
+            
+            // Calculate time difference (bars)
+            var barCount = 0
+            var timeDiff: TimeInterval = 0
+            if !configManager.modelArray.isEmpty {
+                var startIndex = 0
+                var startMinDiff = abs(configManager.modelArray[0].id - Double(startPoint.x))
+                var endIndex = 0
+                var endMinDiff = abs(configManager.modelArray[0].id - Double(endPoint.x))
+
+                for (i, model) in configManager.modelArray.enumerated() {
+                    let startDiff = abs(model.id - Double(startPoint.x))
+                    let endDiff = abs(model.id - Double(endPoint.x))
+                    if startDiff < startMinDiff {
+                        startMinDiff = startDiff
+                        startIndex = i
+                    }
+                    if endDiff < endMinDiff {
+                        endMinDiff = endDiff
+                        endIndex = i
+                    }
+                }
+                
+                barCount = abs(endIndex - startIndex)
+                if startIndex < configManager.modelArray.count && endIndex < configManager.modelArray.count {
+                    let startTime = configManager.modelArray[startIndex].id
+                    let endTime = configManager.modelArray[endIndex].id
+                    timeDiff = abs(endTime - startTime)
+                }
+            }
+            
+            // Format time string
+            // timeDiff is in milliseconds, convert to hours
+            let hours = Int(timeDiff / 3600000)
+            let timeString = hours > 0 ? "\(barCount) bars, \(hours)h" : "\(barCount) bars"
+            
+            // Calculate box that stretches from start to end point
+            let minX = min(startViewPoint.x, endViewPoint.x)
+            let maxX = max(startViewPoint.x, endViewPoint.x)
+            let minY = min(startViewPoint.y, endViewPoint.y)
+            let maxY = max(startViewPoint.y, endViewPoint.y)
+            
+            // Add some padding for the box
+            let padding: CGFloat = 20
+            let boxRect = CGRect(
+                x: minX - padding,
+                y: minY - padding,
+                width: maxX - minX + padding * 2,
+                height: maxY - minY + padding * 2
+            )
+            
+            // Calculate center point
+            let centerX = (startViewPoint.x + endViewPoint.x) / 2
+            let centerY = (startViewPoint.y + endViewPoint.y) / 2
+            
+            context.saveGState()
+            
+            // Draw semi-transparent box
+            let boxColor = drawItem.drawColor.withAlphaComponent(0.2)
+            context.setFillColor(boxColor.cgColor)
+            context.fill(boxRect)
+            
+            // Draw border with width 1
+            context.setStrokeColor(drawItem.drawColor.cgColor)
+            context.setLineWidth(1)
+            context.stroke(boxRect)
+            
+            // Draw crosshairs with arrows pointing from start to end
+            context.setStrokeColor(drawItem.drawColor.cgColor)
+            context.setLineWidth(1.5)
+            
+            let arrowHeadSize: CGFloat = 6
+            
+            // Vertical arrow: from startY to endY
+            let vStartY = boxRect.minY
+            let vEndY = boxRect.maxY
+            context.move(to: CGPoint(x: centerX, y: vStartY))
+            context.addLine(to: CGPoint(x: centerX, y: vEndY))
+            // Arrow head at endY (pointing in direction of endPoint.y)
+            let vArrowY = endViewPoint.y < startViewPoint.y ? vStartY : vEndY
+            let vArrowDirection: CGFloat = endViewPoint.y < startViewPoint.y ? 1 : -1
+            context.move(to: CGPoint(x: centerX, y: vArrowY))
+            context.addLine(to: CGPoint(x: centerX - arrowHeadSize / 2, y: vArrowY + vArrowDirection * arrowHeadSize))
+            context.move(to: CGPoint(x: centerX, y: vArrowY))
+            context.addLine(to: CGPoint(x: centerX + arrowHeadSize / 2, y: vArrowY + vArrowDirection * arrowHeadSize))
+            
+            // Horizontal arrow: from startX to endX
+            let hStartX = boxRect.minX
+            let hEndX = boxRect.maxX
+            context.move(to: CGPoint(x: hStartX, y: centerY))
+            context.addLine(to: CGPoint(x: hEndX, y: centerY))
+            // Arrow head at endX (pointing in direction of endPoint.x)
+            let hArrowX = endViewPoint.x < startViewPoint.x ? hStartX : hEndX
+            let hArrowDirection: CGFloat = endViewPoint.x < startViewPoint.x ? 1 : -1
+            context.move(to: CGPoint(x: hArrowX, y: centerY))
+            context.addLine(to: CGPoint(x: hArrowX + hArrowDirection * arrowHeadSize, y: centerY - arrowHeadSize / 2))
+            context.move(to: CGPoint(x: hArrowX, y: centerY))
+            context.addLine(to: CGPoint(x: hArrowX + hArrowDirection * arrowHeadSize, y: centerY + arrowHeadSize / 2))
+            
+            context.drawPath(using: .stroke)
+            
+            // Draw dashed lines at top and bottom
+            context.setLineWidth(1)
+            var dashPattern: [CGFloat] = [4, 2]
+            context.setLineDash(phase: 0, lengths: dashPattern)
+            
+            // Top dashed line
+            let topLineY = boxRect.minY
+            context.move(to: CGPoint(x: boxRect.minX - 10, y: topLineY))
+            context.addLine(to: CGPoint(x: boxRect.maxX + 10, y: topLineY))
+            
+            // Bottom dotted line
+            dashPattern = [2, 2]
+            context.setLineDash(phase: 0, lengths: dashPattern)
+            let bottomLineY = boxRect.maxY
+            context.move(to: CGPoint(x: boxRect.minX - 10, y: bottomLineY))
+            context.addLine(to: CGPoint(x: boxRect.maxX + 10, y: bottomLineY))
+            
+            context.drawPath(using: .stroke)
+            
+            context.restoreGState()
+            
+            // Draw text box below (positioned at end point)
+            let font = configManager.createFont(configManager.candleTextFontSize)
+            let priceText = String(format: "%.4f (%.2f%%) %.0f", priceDiff, pricePercent, priceDiff * 1000)
+            let timeText = timeString
+            
+            let priceAttributes: [NSAttributedString.Key: Any] = [
+                .font: font,
+                .foregroundColor: UIColor.white
+            ]
+            let timeAttributes: [NSAttributedString.Key: Any] = [
+                .font: font,
+                .foregroundColor: UIColor.white
+            ]
+            
+            let priceSize = (priceText as NSString).size(withAttributes: priceAttributes)
+            let timeSize = (timeText as NSString).size(withAttributes: timeAttributes)
+            let textWidth = max(priceSize.width, timeSize.width)
+            let textHeight = priceSize.height + timeSize.height + 4
+            
+            let paddingH: CGFloat = 8
+            let paddingV: CGFloat = 6
+            let textBoxRect = CGRect(
+                x: centerX - textWidth / 2 - paddingH,
+                y: boxRect.maxY + 8,
+                width: textWidth + paddingH * 2,
+                height: textHeight + paddingV * 2
+            )
+            
+            context.saveGState()
+            // Background color: blue if price increased, red if decreased
+            let textBgColor = endPoint.y > startPoint.y 
+                ? UIColor(red: 41/255.0, green: 98/255.0, blue: 255/255.0, alpha: 1.0)
+                : UIColor(red: 247/255.0, green: 82/255.0, blue: 95/255.0, alpha: 1.0)
+            context.setFillColor(textBgColor.cgColor)
+            let textBoxPath = UIBezierPath(roundedRect: textBoxRect, cornerRadius: 6)
+            context.addPath(textBoxPath.cgPath)
+            context.drawPath(using: .fill)
+            
+            // Draw text
+            let priceTextPoint = CGPoint(
+                x: textBoxRect.minX + paddingH,
+                y: textBoxRect.minY + paddingV
+            )
+            let timeTextPoint = CGPoint(
+                x: textBoxRect.minX + paddingH,
+                y: textBoxRect.minY + paddingV + priceSize.height + 2
+            )
+            (priceText as NSString).draw(at: priceTextPoint, withAttributes: priceAttributes)
+            (timeText as NSString).draw(at: timeTextPoint, withAttributes: timeAttributes)
+            
+            context.restoreGState()
+            
+            if itemIndex == configManager.shouldReloadDrawItemIndex {
+                context.addArc(center: startViewPoint, radius: 10, startAngle: 0, endAngle: CGFloat(Double.pi * 2.0), clockwise: true)
+                context.setFillColor(drawItem.drawColor.withAlphaComponent(0.5).cgColor)
+                context.drawPath(using: .fill)
+                context.addArc(center: startViewPoint, radius: 4, startAngle: 0, endAngle: CGFloat(Double.pi * 2.0), clockwise: true)
+                context.setFillColor(drawItem.drawColor.cgColor)
+                context.drawPath(using: .fill)
+                
+                context.addArc(center: endViewPoint, radius: 10, startAngle: 0, endAngle: CGFloat(Double.pi * 2.0), clockwise: true)
+                context.setFillColor(drawItem.drawColor.withAlphaComponent(0.5).cgColor)
+                context.drawPath(using: .fill)
+                context.addArc(center: endViewPoint, radius: 4, startAngle: 0, endAngle: CGFloat(Double.pi * 2.0), clockwise: true)
+                context.setFillColor(drawItem.drawColor.cgColor)
+                context.drawPath(using: .fill)
+            }
+            return
+        }
+
+        // Special handling for text annotations: draw text at the anchor point with background.
+        if case .text = drawItem.drawType {
+            let viewPoint = klineView.viewPointFromValuePoint(point)
+            // Use per-item font size when provided; otherwise fall back to the global candleTextFontSize.
+            let fontSize = drawItem.textFontSize > 0 ? drawItem.textFontSize : configManager.candleTextFontSize
+            let font = configManager.createFont(fontSize)
+            let text = drawItem.text as NSString
+            if !drawItem.text.isEmpty {
+                let paddingH: CGFloat = 12
+                let paddingV: CGFloat = 6
+                let attributes: [NSAttributedString.Key: Any] = [
+                    .font: font,
+                    .foregroundColor: drawItem.textColor
+                ]
+                let textSize = text.size(withAttributes: attributes)
+                let rect = CGRect(
+                    x: viewPoint.x,
+                    y: viewPoint.y,
+                    width: textSize.width + paddingH * 2,
+                    height: textSize.height + paddingV * 2
+                )
+
+                context.setFillColor(drawItem.textBackgroundColor.cgColor)
+                let radius = drawItem.textCornerRadius
+                let path = UIBezierPath(roundedRect: rect, cornerRadius: radius)
+                context.addPath(path.cgPath)
+                context.drawPath(using: .fill)
+
+                let textPoint = CGPoint(x: viewPoint.x + paddingH, y: viewPoint.y + paddingV)
+                text.draw(at: textPoint, withAttributes: attributes)
+            }
+
+            if itemIndex == configManager.shouldReloadDrawItemIndex {
+                context.addArc(center: viewPoint, radius: 10, startAngle: 0, endAngle: CGFloat(Double.pi * 2.0), clockwise: true)
+                context.setFillColor(drawItem.drawColor.withAlphaComponent(0.5).cgColor)
+                context.drawPath(using: .fill)
+                context.addArc(center: viewPoint, radius: 4, startAngle: 0, endAngle: CGFloat(Double.pi * 2.0), clockwise: true)
+                context.setFillColor(drawItem.drawColor.cgColor)
+                context.drawPath(using: .fill)
+            }
+            return
+        }
+        let lineList = HTDrawItem.lineListWithIndex(drawItem, index, klineView)
+        if index == 2, case .parallelLine = drawItem.drawType, let (startPoint, endPoint) = lineList.first {
+            let firstPoint = drawItem.pointList[0]
+            let secondPoint = drawItem.pointList[1]
+            context.move(to: klineView.viewPointFromValuePoint(firstPoint))
+            context.addLine(to: klineView.viewPointFromValuePoint(secondPoint))
+            context.addLine(to: klineView.viewPointFromValuePoint(startPoint))
+            context.addLine(to: klineView.viewPointFromValuePoint(endPoint))
+            context.closePath()
+            context.setFillColor(drawItem.drawColor.withAlphaComponent(0.5).cgColor)
+            context.drawPath(using: .fill)
+            let dashStartPoint = HTDrawItem.centerPoint(p1: firstPoint, p2: endPoint)
+            let dashEndPoint = HTDrawItem.centerPoint(p1: secondPoint, p2: startPoint)
+            context.move(to: klineView.viewPointFromValuePoint(dashStartPoint))
+            context.addLine(to: klineView.viewPointFromValuePoint(dashEndPoint))
+            context.setLineDash(phase: 0, lengths: [4, 4])
+            context.setStrokeColor(drawItem.drawColor.withAlphaComponent(0.5).cgColor)
+            context.setLineWidth(1)
+            context.drawPath(using: .stroke)
+        }
+        for (startPoint, endPoint) in lineList {
+            drawLine(context, drawItem, klineView.viewPointFromValuePoint(startPoint), klineView.viewPointFromValuePoint(endPoint))
+        }
+
+        if (itemIndex != configManager.shouldReloadDrawItemIndex) {
+            return
+        }
+        
+        context.addArc(center: klineView.viewPointFromValuePoint(point), radius: 10, startAngle: 0, endAngle: CGFloat(Double.pi * 2.0), clockwise: true)
+        context.setFillColor(drawItem.drawColor.withAlphaComponent(0.5).cgColor)
+        context.drawPath(using: .fill)
+        context.addArc(center: klineView.viewPointFromValuePoint(point), radius: 4, startAngle: 0, endAngle: CGFloat(Double.pi * 2.0), clockwise: true)
+        context.setFillColor(drawItem.drawColor.cgColor)
+        context.drawPath(using: .fill)
+    }
+    
+    func draw(_ contenOffset: CGFloat) {
+        guard let context = UIGraphicsGetCurrentContext() else {
+            return
+        }
+        for (itemIndex, drawItem) in drawItemList.enumerated() {
+            for (index, _) in drawItem.pointList.enumerated() {
+                // Skip if point has invalid values (NaN/infinity)
+                let point = drawItem.pointList[index]
+                guard point.x.isFinite && point.y.isFinite else {
+                    continue
+                }
+                drawMapper(context, drawItem, index, itemIndex)
+            }
+        }
+    }
+
+}
