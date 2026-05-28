@@ -506,7 +506,11 @@ class HTKLineContainerView: UIView {
         let translation = CGPoint.init(x: location.x - previousLocation.x, y: location.y - previousLocation.y)
         
         klineView.drawContext.touchesGesture(location, translation, state)
-        shotView.shotPoint = state != .ended ? touched.first?.location(in: self) : nil
+        if state != .ended, let touch = touched.first, let snapshotTarget = shotView.shotView {
+            shotView.shotPoint = touch.location(in: snapshotTarget)
+        } else {
+            shotView.shotPoint = nil
+        }
     }
 
     /// For a given X-value (timestamp), find the candle whose id is closest and
