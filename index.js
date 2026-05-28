@@ -1,22 +1,23 @@
-import React, { forwardRef } from 'react';
-import { requireNativeComponent } from 'react-native';
+'use strict';
 
-const NativeRNKLineView = requireNativeComponent('RNKLineView');
+var React = require('react');
+var ReactNative = require('react-native');
 
-/**
- * Wrapper around the native `RNKLineView`.
- *
- * - `onNewOrder(price)` is normalized to pass only the hovered price number.
- *   Native event shape: { nativeEvent: { price: number } }
- */
-const RNKLineView = forwardRef((props, ref) => {
-  const { onNewOrder, ...rest } = props;
-  const handleNewOrder = onNewOrder
-    ? e => onNewOrder?.(e?.nativeEvent?.price)
+var NativeRNKLineView = ReactNative.requireNativeComponent('RNKLineView');
+
+var RNKLineView = React.forwardRef(function (props, ref) {
+  var onNewOrder = props.onNewOrder;
+  var rest = Object.assign({}, props);
+  delete rest.onNewOrder;
+
+  var handleNewOrder = onNewOrder
+    ? function (e) { return onNewOrder(e && e.nativeEvent && e.nativeEvent.price); }
     : undefined;
-  return <NativeRNKLineView ref={ref} {...rest} onNewOrder={handleNewOrder} />;
+
+  return React.createElement(NativeRNKLineView, Object.assign({}, rest, { ref: ref, onNewOrder: handleNewOrder }));
 });
 
 RNKLineView.displayName = 'RNKLineView';
 
-export default RNKLineView;
+module.exports = RNKLineView;
+module.exports.default = RNKLineView;

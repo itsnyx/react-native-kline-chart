@@ -74,7 +74,7 @@ extension HTKLineDrawProtocol {
 
     func textWidth(title: String, font: UIFont) -> CGFloat {
         let titleString = title as NSString
-        let attributedList: [NSAttributedStringKey: Any] = [
+        let attributedList: [NSAttributedString.Key: Any] = [
             .font: font,
         ]
         let width = titleString.boundingRect(with: CGSize.init(width: 0, height: CGFloat.greatestFiniteMagnitude), options: .usesLineFragmentOrigin, attributes: attributedList, context: nil).width
@@ -83,7 +83,7 @@ extension HTKLineDrawProtocol {
 
     func textHeight(font: UIFont) -> CGFloat {
         let titleString = "你好" as NSString
-        let attributedList: [NSAttributedStringKey: Any] = [
+        let attributedList: [NSAttributedString.Key: Any] = [
             .font: font,
         ]
         let height = titleString.boundingRect(with: CGSize.init(width: CGFloat.greatestFiniteMagnitude, height: 0), options: .usesLineFragmentOrigin, attributes: attributedList, context: nil).height
@@ -95,7 +95,7 @@ extension HTKLineDrawProtocol {
     func drawText(title: String, point: CGPoint, color: UIColor, font: UIFont, context: CGContext, configManager: HTKLineConfigManager) -> CGFloat {
         context.setFillColor(color.cgColor)
         let titleString = title as NSString
-        let attributedList: [NSAttributedStringKey: Any] = [
+        let attributedList: [NSAttributedString.Key: Any] = [
             .font: font,
             .foregroundColor: color,
         ]
