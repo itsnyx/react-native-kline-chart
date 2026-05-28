@@ -494,7 +494,7 @@ class HTKLineContainerView: UIView {
         touchesEnded(touches, with: event)
     }
     
-    func touchesGesture(_ touched: Set<UITouch>, _ state: UIGestureRecognizerState) {
+    func touchesGesture(_ touched: Set<UITouch>, _ state: UIGestureRecognizer.State) {
         guard var location = touched.first?.location(in: self) else {
             shotView.shotPoint = nil
             return

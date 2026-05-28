@@ -32,7 +32,7 @@ class HTDrawContext {
     // Tracks whether the user is currently moving an existing drawing item.
     private var isMovingExistingItem = false
     
-    func touchesGesture(_ location: CGPoint, _ translation: CGPoint, _ state: UIGestureRecognizerState) {
+    func touchesGesture(_ location: CGPoint, _ translation: CGPoint, _ state: UIGestureRecognizer.State) {
         guard let klineView = klineView, breakTouch == false else {
             if state == .ended {
                 breakTouch = false

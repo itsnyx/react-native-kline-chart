@@ -435,7 +435,7 @@ class HTDrawItem: NSObject {
     }
     
     // 是否会响应这次事件, 如果能响应, 不做绘图, 进行拖动
-    static func canResponseTouch(_ drawItemList: [HTDrawItem], _ location: CGPoint, _ translation: CGPoint, _ state: UIGestureRecognizerState, _ klineView: HTKLineView) -> Bool {
+    static func canResponseTouch(_ drawItemList: [HTDrawItem], _ location: CGPoint, _ translation: CGPoint, _ state: UIGestureRecognizer.State, _ klineView: HTKLineView) -> Bool {
         switch state {
         case .began:
             beganFillTouchMoveItem(drawItemList, location, klineView)
