@@ -18,4 +18,5 @@ Pod::Spec.new do |s|
   s.swift_version = "5.0"
 
   s.dependency "React-Core"
+  s.dependency "lottie-ios", ">= 4.0"
 end
