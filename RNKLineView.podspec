@@ -1,7 +1,7 @@
 
 Pod::Spec.new do |s|
   s.name         = "RNKLineView"
-  s.version      = "0.1.0"
+  s.version      = "0.1.1"
   s.summary      = "High-performance candlestick chart component for React Native"
   s.description  = <<-DESC
                   A professional K-Line (candlestick) chart library for React Native
