@@ -506,8 +506,24 @@ class HTKLineContainerView: UIView {
         let translation = CGPoint.init(x: location.x - previousLocation.x, y: location.y - previousLocation.y)
         
         klineView.drawContext.touchesGesture(location, translation, state)
-        if state != .ended, let touch = touched.first, let snapshotTarget = shotView.shotView {
+        if state != .ended, let touch = touched.first, let snapshotTarget = shotView.shotView, let shotParent = shotView.superview {
             shotView.shotPoint = touch.location(in: snapshotTarget)
+
+            // Position the zoom bubble above the finger, clamped inside the chart.
+            let d = shotView.dimension
+            let fingerInParent = touch.location(in: shotParent)
+            let chartInParent = convert(bounds, to: shotParent)
+            let offset: CGFloat = d * 0.6
+            var bubbleX = fingerInParent.x - d / 2
+            var bubbleY = fingerInParent.y - d - offset
+            // Clamp horizontally inside chart
+            bubbleX = max(chartInParent.minX, min(chartInParent.maxX - d, bubbleX))
+            // Clamp vertically inside chart; if no room above, flip below the finger
+            if bubbleY < chartInParent.minY {
+                bubbleY = fingerInParent.y + offset
+            }
+            bubbleY = max(chartInParent.minY, min(chartInParent.maxY - d, bubbleY))
+            shotView.frame = CGRect(x: bubbleX, y: bubbleY, width: d, height: d)
         } else {
             shotView.shotPoint = nil
         }
