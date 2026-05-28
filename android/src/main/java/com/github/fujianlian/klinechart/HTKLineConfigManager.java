@@ -99,6 +99,10 @@ public class HTKLineConfigManager {
     // Controlled from JS via optionList.configList.showCandleCountdown (default: false).
     public boolean showCandleCountdown = false;
 
+    // Whether existing drawings can be moved or edited by touch.
+    // Controlled from JS via optionList.configList.drawingsEditable (default: true).
+    public boolean drawingsEditable = true;
+
     // The actual candle interval duration in milliseconds, passed from JS via
     // optionList.configList.candleIntervalMs (e.g. 60000 for 1m, 3600000 for 1h).
     // Used by the countdown timer instead of the enum-based `time` field.
@@ -533,6 +537,15 @@ public class HTKLineConfigManager {
             this.candleIntervalMs = ((Number) candleIntervalMsObj).longValue();
         } else {
             this.candleIntervalMs = 0;
+        }
+
+        Object drawingsEditableObj = configList.get("drawingsEditable");
+        if (drawingsEditableObj instanceof Boolean) {
+            this.drawingsEditable = (Boolean) drawingsEditableObj;
+        } else if (drawingsEditableObj instanceof Number) {
+            this.drawingsEditable = ((Number) drawingsEditableObj).intValue() != 0;
+        } else {
+            this.drawingsEditable = true;
         }
 
 

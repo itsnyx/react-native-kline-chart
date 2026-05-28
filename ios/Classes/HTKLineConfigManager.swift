@@ -252,6 +252,10 @@ class HTKLineConfigManager: NSObject {
     // Controlled from JS via optionList.configList.showCandleCountdown (default: false).
     var showCandleCountdown: Bool = false
 
+    // Whether existing drawings can be moved or edited by touch.
+    // Controlled from JS via optionList.configList.drawingsEditable (default: true).
+    var drawingsEditable: Bool = true
+
     // The actual candle interval duration in milliseconds, passed from JS via
     // optionList.configList.candleIntervalMs (e.g. 60000 for 1m, 3600000 for 1h).
     // Used by the countdown timer instead of the enum-based `time` field.
@@ -567,6 +571,7 @@ class HTKLineConfigManager: NSObject {
         showPlusIcon = configList["showPlusIcon"] as? Bool ?? true
         showVolume = configList["showVolume"] as? Bool ?? true
         showCandleCountdown = configList["showCandleCountdown"] as? Bool ?? false
+        drawingsEditable = configList["drawingsEditable"] as? Bool ?? true
         candleIntervalMs = (configList["candleIntervalMs"] as? NSNumber)?.doubleValue ?? 0
     }
 

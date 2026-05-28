@@ -68,7 +68,7 @@ public class HTDrawContext {
                 break;
             }
         }
-        if (HTDrawItem.canResponseTouch(drawItemList, location, translation, state, klineView)) {
+        if (configManager.drawingsEditable && HTDrawItem.canResponseTouch(drawItemList, location, translation, state, klineView)) {
             if (state == MotionEvent.ACTION_DOWN) {
                 HTDrawItem moveItem = HTDrawItem.findTouchMoveItem(drawItemList);
                 if (moveItem != null && configManager.onDrawItemDidTouch != null) {

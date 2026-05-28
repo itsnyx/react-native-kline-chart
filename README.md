@@ -120,6 +120,7 @@ Additional computed fields for indicators (`maList`, `bollMb`, `bollUp`, `bollDn
 | `mainFlex` | `number` | Main chart height ratio (0.6-0.85) |
 | `volumeFlex` | `number` | Volume chart height ratio (0.15-0.25) |
 | `showVolume` | `boolean` | Show/hide volume section |
+| `drawingsEditable` | `boolean` | Whether existing drawings can be moved or edited by touch (default: `true`) |
 | `itemWidth` | `number` | Total candle slot width |
 | `candleWidth` | `number` | Candle body width |
 | `fontFamily` | `string` | Font for all text |
@@ -207,6 +208,32 @@ For streaming data (WebSocket, polling), update only the data without re-sending
 ```
 
 Pass saved drawings back via `drawList.drawItemList` to restore them.
+
+## Locking Drawings
+
+Set `drawingsEditable: false` in `configList` to make all existing drawings non-interactive. Touch passes through to normal chart scrolling — drawings are still displayed but cannot be moved or selected.
+
+```js
+configList: {
+  drawingsEditable: false,  // lock — drawings are view-only
+  // drawingsEditable: true, // default — drawings can be moved/edited
+}
+```
+
+A common pattern is to show drawings as read-only by default and toggle editing on when the user activates a drawing toolbar:
+
+```tsx
+const [editingDrawings, setEditingDrawings] = React.useState(false);
+
+const optionList = JSON.stringify({
+  configList: {
+    drawingsEditable: editingDrawings,
+  },
+  drawList: {
+    drawType: editingDrawings ? DrawTypeConstants.show : DrawTypeConstants.none,
+  },
+});
+```
 
 ## Acknowledgments
 
