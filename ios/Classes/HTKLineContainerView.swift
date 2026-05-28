@@ -509,20 +509,19 @@ class HTKLineContainerView: UIView {
         if state != .ended, let touch = touched.first, let snapshotTarget = shotView.shotView, let shotParent = shotView.superview {
             shotView.shotPoint = touch.location(in: snapshotTarget)
 
-            // Position the zoom bubble above the finger, clamped inside the chart.
+            // Pin the zoom bubble to the top-left or top-right corner of the chart
+            // depending on which half the finger is on.
             let d = shotView.dimension
-            let fingerInParent = touch.location(in: shotParent)
+            let fingerInSelf = touch.location(in: self)
             let chartInParent = convert(bounds, to: shotParent)
-            let offset: CGFloat = d * 0.6
-            var bubbleX = fingerInParent.x - d / 2
-            var bubbleY = fingerInParent.y - d - offset
-            // Clamp horizontally inside chart
-            bubbleX = max(chartInParent.minX, min(chartInParent.maxX - d, bubbleX))
-            // Clamp vertically inside chart; if no room above, flip below the finger
-            if bubbleY < chartInParent.minY {
-                bubbleY = fingerInParent.y + offset
+            let margin: CGFloat = 8
+            let bubbleY = chartInParent.minY + margin
+            let bubbleX: CGFloat
+            if fingerInSelf.x > bounds.width / 2 {
+                bubbleX = chartInParent.minX + margin        // finger on right → pin top-left
+            } else {
+                bubbleX = chartInParent.maxX - d - margin    // finger on left  → pin top-right
             }
-            bubbleY = max(chartInParent.minY, min(chartInParent.maxY - d, bubbleY))
             shotView.frame = CGRect(x: bubbleX, y: bubbleY, width: d, height: d)
         } else {
             shotView.shotPoint = nil
