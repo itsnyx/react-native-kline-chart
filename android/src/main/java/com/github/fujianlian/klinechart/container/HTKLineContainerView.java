@@ -475,6 +475,11 @@ public class HTKLineContainerView extends RelativeLayout {
             return true;
         }
 
+        // When editing is disabled, don't intercept touches on existing drawings.
+        if (!configManager.drawingsEditable) {
+            return false;
+        }
+
         // In "show" / manage-drawings mode (JS may pass drawType = -1 which maps to none
         // on native), we want the user to be able to scroll the chart freely and only
         // intercept gestures that actually hit an existing drawing.

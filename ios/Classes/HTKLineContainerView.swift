@@ -464,6 +464,11 @@ class HTKLineContainerView: UIView {
             return self
         }
 
+        // When editing is disabled, don't intercept touches on existing drawings.
+        if !configManager.drawingsEditable {
+            return klineView
+        }
+
         // In "show" / manage-drawings mode (JS may pass drawType = -1 which maps to `.none` here),
         // we only intercept touches that actually hit an existing drawing. All other touches go to
         // HTKLineView so the user can still scroll the chart.

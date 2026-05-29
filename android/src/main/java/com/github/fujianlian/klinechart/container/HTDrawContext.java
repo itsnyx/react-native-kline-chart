@@ -24,8 +24,10 @@ public class HTDrawContext {
     private HTKLineConfigManager configManager;
 
     private Boolean breakTouch = false;
-    // Tracks whether the user is currently moving an existing drawing item.
+    // Tracks whether the user is currently touching an existing drawing item.
     private boolean isMovingExistingItem = false;
+    // Tracks whether the finger actually dragged (translated) during the gesture.
+    private boolean didDragExistingItem = false;
 
     public HTDrawContext(BaseKLineChartView klineView, HTKLineConfigManager configManager) {
         this.klineView = klineView;
@@ -41,20 +43,25 @@ public class HTDrawContext {
             return;
         }
 
-        // If we were moving an existing item and the gesture just ended, fire a single move callback.
+        // Gesture ended while interacting with an existing item.
         if (state == MotionEvent.ACTION_UP && isMovingExistingItem) {
-            HTDrawItem moveItem = HTDrawItem.findTouchMoveItem(drawItemList);
-            if (moveItem != null && configManager.onDrawItemMove != null) {
-                int moveItemIndex = drawItemList.indexOf(moveItem);
-                configManager.onDrawItemMove.invoke(moveItem, moveItemIndex);
+            // Only fire onDrawItemMove when the finger actually dragged (not a pure tap).
+            if (didDragExistingItem) {
+                HTDrawItem moveItem = HTDrawItem.findTouchMoveItem(drawItemList);
+                if (moveItem != null && configManager.onDrawItemMove != null) {
+                    int moveItemIndex = drawItemList.indexOf(moveItem);
+                    configManager.onDrawItemMove.invoke(moveItem, moveItemIndex);
+                }
             }
+            HTDrawItem.clearAllTouchMoveIndexList(drawItemList);
             isMovingExistingItem = false;
+            didDragExistingItem = false;
             invalidate();
             return;
         }
         switch (state) {
             case MotionEvent.ACTION_DOWN: {
-                if (configManager.shouldReloadDrawItemIndex > HTDrawState.showContext) {
+                if (configManager.drawingsEditable && configManager.shouldReloadDrawItemIndex > HTDrawState.showContext) {
                     HTDrawItem selectedDrawItem = drawItemList.get(configManager.shouldReloadDrawItemIndex);
                     if (selectedDrawItem.pointList.size() >= selectedDrawItem.drawType.count()) {
                         if (HTDrawItem.canResponseLocation(drawItemList, location, klineView) != selectedDrawItem) {
@@ -72,11 +79,14 @@ public class HTDrawContext {
             if (state == MotionEvent.ACTION_DOWN) {
                 HTDrawItem moveItem = HTDrawItem.findTouchMoveItem(drawItemList);
                 if (moveItem != null && configManager.onDrawItemDidTouch != null) {
-                    // User started interacting with an existing drawing.
                     isMovingExistingItem = true;
+                    didDragExistingItem = false;
                     int moveItemIndex = drawItemList.indexOf(moveItem);
                     configManager.onDrawItemDidTouch.invoke(moveItem, moveItemIndex);
                 }
+            }
+            if (state == MotionEvent.ACTION_MOVE) {
+                didDragExistingItem = true;
             }
             invalidate();
             return;

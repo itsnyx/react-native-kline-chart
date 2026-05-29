@@ -29,9 +29,11 @@ class HTDrawContext {
     }
     
     var breakTouch = false
-    // Tracks whether the user is currently moving an existing drawing item.
+    // Tracks whether the user is currently touching an existing drawing item.
     private var isMovingExistingItem = false
-    
+    // Tracks whether the finger actually dragged (translated) during the gesture.
+    private var didDragExistingItem = false
+
     func touchesGesture(_ location: CGPoint, _ translation: CGPoint, _ state: UIGestureRecognizer.State) {
         guard let klineView = klineView, breakTouch == false else {
             if state == .ended {
@@ -40,18 +42,23 @@ class HTDrawContext {
             return
         }
 
-        // If we were moving an existing item and the gesture just ended, fire a single move callback.
-        if state == .ended, isMovingExistingItem,
-           let moveItem = HTDrawItem.findTouchMoveItem(drawItemList),
-           let moveItemIndex = drawItemList.index(of: moveItem) {
-            configManager.onDrawItemMove?(moveItem, moveItemIndex)
+        // Gesture ended while interacting with an existing item.
+        if state == .ended, isMovingExistingItem {
+            // Only fire onDrawItemMove when the finger actually dragged (not a pure tap).
+            if didDragExistingItem,
+               let moveItem = HTDrawItem.findTouchMoveItem(drawItemList),
+               let moveItemIndex = drawItemList.index(of: moveItem) {
+                configManager.onDrawItemMove?(moveItem, moveItemIndex)
+            }
+            HTDrawItem.clearAllTouchMoveIndexList(drawItemList)
             isMovingExistingItem = false
+            didDragExistingItem = false
             setNeedsDisplay()
             return
         }
         switch state {
         case .began:
-            if (configManager.shouldReloadDrawItemIndex > HTDrawState.showContext.rawValue) {
+            if (configManager.drawingsEditable && configManager.shouldReloadDrawItemIndex > HTDrawState.showContext.rawValue) {
                 let selectedDrawItem = drawItemList[configManager.shouldReloadDrawItemIndex]
                 if (selectedDrawItem.pointList.count >= selectedDrawItem.drawType.count) {
                     if (HTDrawItem.canResponseLocation(drawItemList, location, klineView) != selectedDrawItem) {
@@ -85,9 +92,12 @@ class HTDrawContext {
             if state == .began,
                let moveItem = HTDrawItem.findTouchMoveItem(drawItemList),
                let moveItemIndex = drawItemList.index(of: moveItem) {
-                // User started interacting with an existing drawing.
                 isMovingExistingItem = true
+                didDragExistingItem = false
                 configManager.onDrawItemDidTouch?(moveItem, moveItemIndex)
+            }
+            if state == .changed {
+                didDragExistingItem = true
             }
             setNeedsDisplay()
             return
