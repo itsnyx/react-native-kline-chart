@@ -299,15 +299,34 @@ public class HTDrawContext {
 
         // Candle marker: bubble with text and a pointer to a specific candle/price.
         if (drawItem.drawType == HTDrawType.candleMarker) {
-            // If the marker's anchor candle is outside the current visible candle range,
-            // don't draw it at all (avoid "sticking" to left/right edges due to clamping).
+            // If the marker's target candle isn't loaded yet or is outside the visible
+            // range, skip drawing entirely. This prevents the marker from snapping to the
+            // oldest/newest loaded candle when its real candle hasn't been fetched.
             if (configManager != null && configManager.modelArray != null && configManager.modelArray.size() > 0) {
+                int anchorIndex = closestCandleIndexForX(point.x);
+                if (anchorIndex < 0) {
+                    return;
+                }
+
+                // Check if the closest candle is actually the target candle, not just
+                // the nearest loaded one. Use candle interval as the threshold.
+                double minDiff = Math.abs(configManager.modelArray.get(anchorIndex).id - point.x);
+                double maxGap = 0;
+                if (configManager.candleIntervalMs > 0) {
+                    maxGap = configManager.candleIntervalMs / 2.0;
+                } else if (configManager.modelArray.size() >= 2) {
+                    double gap = Math.abs(configManager.modelArray.get(1).id - configManager.modelArray.get(0).id);
+                    maxGap = gap / 2.0;
+                }
+                if (maxGap > 0 && minDiff > maxGap) {
+                    return;
+                }
+
                 int startIndex = klineView.indexFromScrollX(klineView.viewXToScrollX(0));
                 int stopIndex = klineView.indexFromScrollX(klineView.viewXToScrollX(klineView.getWidth()));
                 int minIndex = Math.min(startIndex, stopIndex);
                 int maxIndex = Math.max(startIndex, stopIndex);
-                int anchorIndex = closestCandleIndexForX(point.x);
-                if (anchorIndex < 0 || anchorIndex < minIndex || anchorIndex > maxIndex) {
+                if (anchorIndex < minIndex || anchorIndex > maxIndex) {
                     return;
                 }
             }

@@ -296,12 +296,10 @@ class HTDrawContext {
 
         // Candle marker: bubble with text and a pointer to a specific candle/price.
         if drawItem.drawType == .candleMarker {
-            // If the marker's anchor candle is outside the current visible candle range,
-            // don't draw it at all (avoid "sticking" to left/right edges due to clamping).
+            // If the marker's target candle isn't loaded yet or is outside the visible
+            // range, skip drawing entirely. This prevents the marker from snapping to the
+            // oldest/newest loaded candle when its real candle hasn't been fetched.
             if !configManager.modelArray.isEmpty {
-                // Find the closest candle index to the marker's X (timestamp). We use an index-based
-                // test rather than raw timestamp bounds to avoid edge cases where the marker's `x`
-                // is slightly outside the visible-id range but still belongs to the edge candle.
                 var closestIndex = 0
                 var minDiff = abs(configManager.modelArray[0].id - Double(point.x))
                 for (i, model) in configManager.modelArray.enumerated() {
@@ -310,6 +308,19 @@ class HTDrawContext {
                         minDiff = diff
                         closestIndex = i
                     }
+                }
+
+                // Determine the maximum allowed timestamp gap. If the candle interval
+                // is known, use half of it; otherwise derive it from adjacent candles.
+                var maxGap: Double = 0
+                if configManager.candleIntervalMs > 0 {
+                    maxGap = configManager.candleIntervalMs / 2.0
+                } else if configManager.modelArray.count >= 2 {
+                    let gap = abs(configManager.modelArray[1].id - configManager.modelArray[0].id)
+                    maxGap = gap / 2.0
+                }
+                if maxGap > 0 && minDiff > maxGap {
+                    return
                 }
 
                 let startIndex = max(0, min(klineView.visibleRange.lowerBound, configManager.modelArray.count - 1))
