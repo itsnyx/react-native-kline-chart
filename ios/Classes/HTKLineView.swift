@@ -150,6 +150,10 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
     private var animatedChildMax: CGFloat = .nan
     private let scaleAnimLerp: CGFloat = 0.12
 
+    // Track panel config so we can reset vertical scale when volume/child indicator changes.
+    private var lastRenderedChildType: HTKLineChildType = .none
+    private var lastRenderedShowVolume: Bool = true
+
     // 计算属性
     var visibleModelArray = [HTKLineModel]()
     var volumeRange: ClosedRange<CGFloat> = 0...0
@@ -209,6 +213,14 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
     }
 
     func reloadConfigManager(_ configManager: HTKLineConfigManager) {
+
+        let childType = configManager.childType
+        let showVolume = configManager.showVolume
+        if childType != lastRenderedChildType || showVolume != lastRenderedShowVolume {
+            resetAnimatedScaleValues()
+            lastRenderedChildType = childType
+            lastRenderedShowVolume = showVolume
+        }
 
         switch configManager.childType {
         case .none:
@@ -487,8 +499,14 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
             animatedVolMax += (targetVolMax - animatedVolMax) * scaleAnimLerp
             animatedChildMin += (targetChildMin - animatedChildMin) * scaleAnimLerp
             animatedChildMax += (targetChildMax - animatedChildMax) * scaleAnimLerp
-            if abs(animatedMainMax - targetMainMax) > 0.0001
-                || abs(animatedMainMin - targetMainMin) > 0.0001 {
+            let needsRedraw =
+                abs(animatedMainMax - targetMainMax) > 0.0001
+                || abs(animatedMainMin - targetMainMin) > 0.0001
+                || abs(animatedVolMax - targetVolMax) > 0.0001
+                || abs(animatedVolMin - targetVolMin) > 0.0001
+                || abs(animatedChildMax - targetChildMax) > 0.0001
+                || abs(animatedChildMin - targetChildMin) > 0.0001
+            if needsRedraw {
                 DispatchQueue.main.async { [weak self] in self?.setNeedsDisplay() }
             }
         }
