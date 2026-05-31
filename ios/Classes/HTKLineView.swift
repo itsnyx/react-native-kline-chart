@@ -61,7 +61,9 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
     // Timer for updating the candle countdown every second.
     private var candleCountdownTimer: Timer?
 
-    var scale: CGFloat = 1
+    // Horizontal zoom factor applied to itemWidth/candleWidth (1.0 = 100%).
+    // Default to 0.8 so the chart opens slightly zoomed out (80%). Pinch clamps to 0.3–3.
+    var scale: CGFloat = 0.8
 
     // Y-axis zoom factor: 1.0 = 100% (auto-fit), up to 5.0 = 20% (zoomed out).
     // Persists across gestures so the zoom level is retained after finger lift.

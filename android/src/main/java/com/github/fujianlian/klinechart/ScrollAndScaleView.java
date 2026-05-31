@@ -30,7 +30,9 @@ public abstract class ScrollAndScaleView extends RelativeLayout implements
 
     protected boolean touch = false;
 
-    protected float mScaleX = 1;
+    // Horizontal zoom factor applied to candle width/spacing (1.0 = 100%).
+    // Default to 0.8 so the chart opens slightly zoomed out (80%). Clamped to mScaleXMin..mScaleXMax.
+    protected float mScaleX = 0.8f;
 
     protected float mScaleXMax = 2f;
 
