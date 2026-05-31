@@ -95,7 +95,11 @@ public class HTKLineContainerView extends RelativeLayout {
         klineView.reloadColor();
         Boolean isEnd = klineView.getScrollOffset() >= klineView.getMaxScrollX();
         klineView.notifyChanged();
-        if (isEnd || klineView.configManager.shouldScrollToEnd) {
+        if (configManager.suppressScrollToEndOnce) {
+            // A prepend of older candles just anchored the scroll position in
+            // setModelArray; don't yank the view to the right edge this once.
+            configManager.suppressScrollToEndOnce = false;
+        } else if (isEnd || klineView.configManager.shouldScrollToEnd) {
             klineView.setScrollX(klineView.getMaxScrollX());
         }
 

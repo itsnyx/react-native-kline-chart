@@ -37,6 +37,16 @@ public class HTKLineConfigManager {
      */
     public boolean loadingMoreFromLeft = false;
 
+    /**
+     * One-shot guard set by `setModelArray` right after it anchors the scroll
+     * position for a prepend of older candles. The `optionList` prop updates in
+     * the same React commit and its handler (`reloadConfigManager`) would
+     * otherwise snap the chart to the right edge when `shouldScrollToEnd` is set,
+     * clobbering the anchor. `reloadConfigManager` consumes (clears) this flag and
+     * skips the snap exactly once so the two async data paths can't fight.
+     */
+    public boolean suppressScrollToEndOnce = false;
+
 
 	public int shotBackgroundColor = Color.RED;
 

@@ -146,24 +146,32 @@ public class RNKLineView extends SimpleViewManager<HTKLineContainerView> {
                         // Detect prepend by finding where the current first candle
                         // appears in the new data. This is robust against intermediate
                         // live-tick updates that would corrupt a count-based comparison.
+                        //
+                        // NOTE: detection deliberately does NOT depend on the
+                        // loadingMoreFromLeft flag. That flag is cleared synchronously by
+                        // the refreshComplete command (which JS calls right after prepending)
+                        // while this data update is still being parsed on a background
+                        // thread — so by the time we get here the flag is usually already
+                        // false. Finding the old first candle at index > 0 in the new array
+                        // is itself an unambiguous signal of a prepend, so we rely on that
+                        // alone and stay correct regardless of flag/prop-update timing.
                         int prependedCount = 0;
-                        boolean loadingMoreFromLeft = containerView.configManager.loadingMoreFromLeft;
-                        if (loadingMoreFromLeft) {
-                            List<KLineEntity> currentArray = containerView.configManager.modelArray;
-                            if (currentArray != null && !currentArray.isEmpty() && !packedList.isEmpty()) {
-                                double oldFirstId = currentArray.get(0).id;
-                                boolean found = false;
-                                for (int i = 0; i < packedList.size(); i++) {
-                                    if (packedList.get(i).id == oldFirstId) {
-                                        prependedCount = i;
-                                        found = true;
-                                        break;
-                                    }
+                        boolean dataReplaced = false;
+                        List<KLineEntity> currentArray = containerView.configManager.modelArray;
+                        if (currentArray != null && !currentArray.isEmpty() && !packedList.isEmpty()) {
+                            double oldFirstId = currentArray.get(0).id;
+                            boolean found = false;
+                            for (int i = 0; i < packedList.size(); i++) {
+                                if (packedList.get(i).id == oldFirstId) {
+                                    prependedCount = i;
+                                    found = true;
+                                    break;
                                 }
-                                if (!found) {
-                                    // Data replaced entirely (e.g. timeframe switch) — reset flag
-                                    containerView.configManager.loadingMoreFromLeft = false;
-                                }
+                            }
+                            if (!found) {
+                                // Old first candle is gone → data was replaced wholesale
+                                // (e.g. timeframe switch), not prepended.
+                                dataReplaced = true;
                             }
                         }
 
@@ -172,18 +180,29 @@ public class RNKLineView extends SimpleViewManager<HTKLineContainerView> {
                         containerView.configManager.modelArray = packedList;
 
                         if (prependedCount > 0) {
+                            // Shift scroll so the previously visible candles stay anchored,
+                            // regardless of where the user scrolled while waiting for data.
                             int shiftPx = Math.round(prependedCount * containerView.configManager.itemWidth);
                             int targetScrollX = oldScrollOffset + shiftPx;
                             containerView.klineView.notifyChanged();
                             containerView.klineView.setScrollX(targetScrollX);
                             containerView.configManager.loadingMoreFromLeft = false;
+                            // The sibling optionList update (same React commit) must not snap
+                            // the chart back to the right edge and undo this anchor.
+                            containerView.configManager.suppressScrollToEndOnce = true;
                         } else {
                             containerView.klineView.notifyChanged();
                             if (wasAtEnd) {
                                 containerView.klineView.setScrollX(containerView.klineView.getMaxScrollX());
                             }
-                            // Don't reset loadingMoreFromLeft for live ticks —
-                            // the flag stays active until the actual prepend arrives.
+                            if (dataReplaced) {
+                                // Data replaced entirely (e.g. timeframe switch) — clear the
+                                // flag so a stale "loading" state can't suppress later updates.
+                                containerView.configManager.loadingMoreFromLeft = false;
+                            }
+                            // Otherwise (a live-tick append where the first candle is
+                            // unchanged) leave loadingMoreFromLeft as-is — the flag stays
+                            // active until the actual prepend arrives.
                         }
                     }
                 });
