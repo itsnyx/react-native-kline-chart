@@ -208,6 +208,10 @@ public abstract class BaseKLineChartView extends ScrollAndScaleView implements D
     private float mAnimatedChildMaxValue = Float.NaN;
     private float mAnimatedChildMinValue = Float.NaN;
     private int mPrevItemCountForAnim = -1;
+    // When true, the next calculateValue() snaps the animated min/max to target
+    // instead of lerping. notifyChanged() sets this for normal/wholesale updates;
+    // notifyChangedAnimated() leaves it false so prepended history rescales smoothly.
+    private boolean mForceScaleSnap = false;
     private static final float SCALE_ANIM_LERP = 0.12f;
 
     public BaseKLineChartView(Context context, HTKLineConfigManager configManager) {
@@ -1409,6 +1413,20 @@ public abstract class BaseKLineChartView extends ScrollAndScaleView implements D
      * 重新计算并刷新线条
      */
     public void notifyChanged() {
+        notifyChangedInternal(true);
+    }
+
+    /**
+     * Like {@link #notifyChanged()} but lets the vertical min/max rescale animate
+     * smoothly instead of snapping. Used when older candles are prepended after
+     * onEndReached so the chart height adjusts gradually as the empty left padding
+     * is replaced by real candles, rather than jumping to the new range.
+     */
+    public void notifyChangedAnimated() {
+        notifyChangedInternal(false);
+    }
+
+    private void notifyChangedInternal(boolean snapScale) {
         mItemCount = configManager.modelArray.size();
         mDataLen = mItemCount * mPointWidth;
         if (isShowChild && mChildDrawPosition == -1) {
@@ -1422,11 +1440,15 @@ public abstract class BaseKLineChartView extends ScrollAndScaleView implements D
         if (mSelectedIndex >= mItemCount) {
             isLongPress = false;
         }
-        // Force the next calculateValue() to snap instead of lerp.
-        // We set the counter to -1 so the snap condition fires, but we do NOT
-        // reset animated values to NaN — that would cause BigDecimal crashes if
-        // onDraw fires before calculateValue() sets real values.
-        mPrevItemCountForAnim = -1;
+        // For normal/wholesale updates, force the next calculateValue() to snap.
+        // We use a boolean flag rather than resetting animated values to NaN —
+        // NaN would cause BigDecimal crashes if onDraw fires before calculateValue()
+        // sets real values. When snapScale is false (prepend), leave the flag clear
+        // so the min/max lerp smoothly toward the new range.
+        // Set explicitly (don't just OR-in) so that when the optionList and modelArray
+        // prop updates land in the same frame, the last call wins: an animated prepend
+        // update clears a snap requested by a sibling notifyChanged(), and vice versa.
+        mForceScaleSnap = snapScale;
 
         initRect();
         initLottieView();
@@ -1586,8 +1608,11 @@ public abstract class BaseKLineChartView extends ScrollAndScaleView implements D
                 mChildMinValue = -10.00f;
         }
         // Animate min/max toward target values for smooth vertical rescaling.
-        // Snap immediately on first frame or when data count changes (initial load / onEndReached).
-        boolean snap = Float.isNaN(mAnimatedMainMaxValue) || mItemCount != mPrevItemCountForAnim;
+        // Snap on the first frame (no animated value yet) or when a wholesale update
+        // requested it via notifyChanged(). Prepends use notifyChangedAnimated(), which
+        // leaves mForceScaleSnap clear so the range lerps smoothly to the new min/max.
+        boolean snap = Float.isNaN(mAnimatedMainMaxValue) || mForceScaleSnap;
+        mForceScaleSnap = false;
         mPrevItemCountForAnim = mItemCount;
 
         if (snap) {

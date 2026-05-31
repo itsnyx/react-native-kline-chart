@@ -184,7 +184,9 @@ public class RNKLineView extends SimpleViewManager<HTKLineContainerView> {
                             // regardless of where the user scrolled while waiting for data.
                             int shiftPx = Math.round(prependedCount * containerView.configManager.itemWidth);
                             int targetScrollX = oldScrollOffset + shiftPx;
-                            containerView.klineView.notifyChanged();
+                            // Animated rescale: as the empty left padding is replaced by real
+                            // candles the visible min/max changes — lerp to it instead of snapping.
+                            containerView.klineView.notifyChangedAnimated();
                             containerView.klineView.setScrollX(targetScrollX);
                             containerView.configManager.loadingMoreFromLeft = false;
                             // The sibling optionList update (same React commit) must not snap

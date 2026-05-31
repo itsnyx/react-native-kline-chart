@@ -109,9 +109,16 @@ class HTKLineContainerView: UIView {
                         let addedCount = max(newCount - previousCount, 0)
 
                         // When data is replaced wholesale (initial load, timeframe switch,
-                        // or prepend), snap the animated scale values so the chart doesn't
-                        // slowly lerp from the old price range to the new one.
-                        if previousCount == 0 || prependedCount > 0 || addedCount > 1 || newCount < previousCount {
+                        // large bulk add, or shrink), snap the animated scale values so the
+                        // chart doesn't slowly lerp from an unrelated old price range.
+                        //
+                        // A prepend is deliberately excluded (even though addedCount > 1):
+                        // as the empty left padding is replaced by real candles the visible
+                        // min/max changes, and we want that vertical rescale to animate
+                        // smoothly rather than snap. The scale-lerp self-drives via
+                        // setNeedsDisplay until it converges.
+                        if prependedCount == 0
+                            && (previousCount == 0 || dataReplaced || addedCount > 1 || newCount < previousCount) {
                             self.klineView.resetAnimatedScaleValues()
                         }
 

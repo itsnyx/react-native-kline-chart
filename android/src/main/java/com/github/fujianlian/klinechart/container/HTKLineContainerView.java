@@ -94,13 +94,18 @@ public class HTKLineContainerView extends RelativeLayout {
         klineView.setMTextColor(klineView.configManager.candleTextColor);
         klineView.reloadColor();
         Boolean isEnd = klineView.getScrollOffset() >= klineView.getMaxScrollX();
-        klineView.notifyChanged();
         if (configManager.suppressScrollToEndOnce) {
-            // A prepend of older candles just anchored the scroll position in
-            // setModelArray; don't yank the view to the right edge this once.
+            // A prepend of older candles just anchored the scroll position and started
+            // an animated rescale in setModelArray. Use the animated notify so this
+            // sibling optionList update doesn't snap the min/max, and don't yank the
+            // view to the right edge this once.
             configManager.suppressScrollToEndOnce = false;
-        } else if (isEnd || klineView.configManager.shouldScrollToEnd) {
-            klineView.setScrollX(klineView.getMaxScrollX());
+            klineView.notifyChangedAnimated();
+        } else {
+            klineView.notifyChanged();
+            if (isEnd || klineView.configManager.shouldScrollToEnd) {
+                klineView.setScrollX(klineView.getMaxScrollX());
+            }
         }
 
         final int id = this.getId();
