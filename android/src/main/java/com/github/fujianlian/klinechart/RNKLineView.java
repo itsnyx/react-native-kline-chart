@@ -11,7 +11,10 @@ import com.facebook.react.common.MapBuilder;
 import com.facebook.react.uimanager.SimpleViewManager;
 import com.facebook.react.uimanager.ThemedReactContext;
 import com.facebook.react.uimanager.annotations.ReactProp;
+import com.github.fujianlian.klinechart.container.HTDrawItem;
+import com.github.fujianlian.klinechart.container.HTDrawType;
 import com.github.fujianlian.klinechart.container.HTKLineContainerView;
+import com.github.fujianlian.klinechart.container.HTPoint;
 import com.github.fujianlian.klinechart.draw.PrimaryStatus;
 import com.github.fujianlian.klinechart.draw.SecondStatus;
 import com.github.fujianlian.klinechart.formatter.DateFormatter;
@@ -178,6 +181,21 @@ public class RNKLineView extends SimpleViewManager<HTKLineContainerView> {
                         // Assign the new data right before notifyChanged so both happen
                         // in the same UI frame — no stale-data draw in between.
                         containerView.configManager.modelArray = packedList;
+
+                        // Recalculate candleMarker Y positions from the new candle data
+                        // so markers track the correct high/low after timeframe changes.
+                        if (!packedList.isEmpty()) {
+                            for (HTDrawItem drawItem : containerView.klineView.drawContext.drawItemList) {
+                                if (drawItem.drawType == HTDrawType.candleMarker && !drawItem.pointList.isEmpty()) {
+                                    float x = drawItem.pointList.get(0).x;
+                                    boolean isTop = "top".equalsIgnoreCase(drawItem.position);
+                                    float newY = containerView.candleMarkerBodyValueForX(x, isTop);
+                                    HTPoint pt = drawItem.pointList.get(0);
+                                    pt.x = x;
+                                    pt.y = newY;
+                                }
+                            }
+                        }
 
                         if (prependedCount > 0) {
                             // Shift scroll so the previously visible candles stay anchored,

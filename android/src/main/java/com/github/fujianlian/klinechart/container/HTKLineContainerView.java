@@ -563,7 +563,7 @@ public class HTKLineContainerView extends RelativeLayout {
      * This mirrors HTDrawContext.bodyBottomValueForX/bodyTopValueForX and is used
      * when reconstructing candleMarker drawings from JS that only provide `x`.
      */
-    private float candleMarkerBodyValueForX(float valueX, boolean useTop) {
+    public float candleMarkerBodyValueForX(float valueX, boolean useTop) {
         if (configManager == null || configManager.modelArray == null || configManager.modelArray.size() == 0) {
             return valueX;
         }

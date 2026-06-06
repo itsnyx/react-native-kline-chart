@@ -150,6 +150,19 @@ class HTKLineContainerView: UIView {
                         // Don't reset loadingMoreFromLeft for live ticks —
                         // the flag stays active until the actual prepend arrives.
 
+                        // Recalculate candleMarker Y positions from the new candle data
+                        // so markers track the correct high/low after timeframe changes.
+                        if !self.configManager.modelArray.isEmpty {
+                            for drawItem in self.klineView.drawContext.drawItemList {
+                                guard drawItem.drawType == .candleMarker,
+                                      !drawItem.pointList.isEmpty else { continue }
+                                let x = drawItem.pointList[0].x
+                                let isTop = drawItem.position.lowercased() == "top"
+                                let newY = self.candleMarkerBodyValue(forX: x, useTop: isTop)
+                                drawItem.pointList[0] = CGPoint(x: x, y: newY)
+                            }
+                        }
+
                         self.klineView.scrollViewDidScroll(self.klineView)
                     }
                 } catch {
