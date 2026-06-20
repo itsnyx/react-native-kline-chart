@@ -1029,15 +1029,15 @@ public abstract class BaseKLineChartView extends ScrollAndScaleView implements D
         String text = safeText(formatValue(selectedValue));
         float textWidth = mTextPaint.measureText(text);
 
-        // Right-side hover price pill: price on top, selected candle change % below.
+        // Hover price pill: [ + ] | price (top) + change % (below).
         mSelectedPriceValue = selectedValue;
 
         boolean showPlus = configManager == null || configManager.showPlusIcon;
 
-        // Selected candle change % = (close - open) / open * 100.
-        float openV = point.getOpenPrice();
-        float closeV = point.getClosePrice();
-        float changePct = openV != 0 ? (closeV - openV) / openV * 100f : 0f;
+        // Change % is the crosshair price relative to the latest live price, so it updates as the
+        // finger moves (both vertically and across candles).
+        float liveClose = mItemCount > 0 ? ((IKLine) getItem(mItemCount - 1)).getClosePrice() : 0f;
+        float changePct = liveClose != 0 ? (selectedValue - liveClose) / liveClose * 100f : 0f;
         int changeColor = changePct >= 0 ? configManager.increaseColor : configManager.decreaseColor;
         String changeText = (changePct >= 0 ? "+" : "") + String.format(java.util.Locale.US, "%.2f", changePct) + "%";
 
@@ -1051,25 +1051,23 @@ public abstract class BaseKLineChartView extends ScrollAndScaleView implements D
         float lineGap = ViewUtil.Dp2Px(getContext(), 2);
         float textPaddingH = ViewUtil.Dp2Px(getContext(), 8);
         float pillHeight = lineH * 2f + lineGap + innerPadV * 2f;
-        float whitePillWidth = contentTextWidth + textPaddingH * 2f;
 
-        float plusRadius = showPlus ? pillHeight * 0.36f : 0f;
-        float plusGap = showPlus ? ViewUtil.Dp2Px(getContext(), 5) : 0f;
-        float totalWidth = whitePillWidth + (showPlus ? plusRadius * 2f + plusGap : 0f);
+        float iconAreaWidth = showPlus ? pillHeight : 0f; // square area on the left for the "+"
+        float dividerWidth = showPlus ? 1f : 0f;
+        float pillWidth = iconAreaWidth + dividerWidth + contentTextWidth + textPaddingH * 2f;
 
         float rightEdge = mWidth;
         float marginY = 2f;
         float top = Math.max(marginY, Math.min(getHeight() - marginY - pillHeight, y - pillHeight / 2f));
         float bottom = top + pillHeight;
-        float whiteLeft = rightEdge - whitePillWidth;
+        float left = rightEdge - pillWidth;
 
-        // Full hit/overlap rect, including the plus circle (used by tap-to-trade + panel layout).
-        mSelectedPricePillRect.set(rightEdge - totalWidth, top, rightEdge, bottom);
+        mSelectedPricePillRect.set(left, top, rightEdge, bottom);
         startX = 0;
-        endX = Math.max(0, rightEdge - totalWidth);
+        endX = Math.max(0, left);
 
         // White pill background + subtle border.
-        RectF whitePillRect = new RectF(whiteLeft, top, rightEdge, bottom);
+        RectF whitePillRect = new RectF(left, top, rightEdge, bottom);
         Paint paint = mSelectPointPaint;
         paint.setAntiAlias(true);
         paint.setStyle(Paint.Style.FILL);
@@ -1082,36 +1080,49 @@ public abstract class BaseKLineChartView extends ScrollAndScaleView implements D
         paint.setColor(Color.argb(255, 217, 217, 217)); // light gray
         canvas.drawRoundRect(whitePillRect, radius, radius, paint);
 
-        // Price (top, black) + change % (below, colored), both right-aligned.
+        float dividerX = left + iconAreaWidth;
+        if (showPlus) {
+            // "+" button: black circle with a white border ring + white plus glyph.
+            float iconCx = left + iconAreaWidth / 2f;
+            float iconCy = (top + bottom) / 2f;
+            float circleRadius = (pillHeight - ViewUtil.Dp2Px(getContext(), 8)) / 2f;
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(Color.BLACK);
+            canvas.drawCircle(iconCx, iconCy, circleRadius, paint);
+
+            // White border ring around the black circle.
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setColor(Color.WHITE);
+            paint.setStrokeWidth(Math.max(2f, circleRadius * 0.16f));
+            canvas.drawCircle(iconCx, iconCy, circleRadius, paint);
+
+            paint.setColor(Color.WHITE);
+            paint.setStrokeWidth(Math.max(2f, circleRadius * 0.22f));
+            paint.setStrokeCap(Paint.Cap.ROUND);
+            float plusLen = circleRadius;
+            canvas.drawLine(iconCx - plusLen / 2f, iconCy, iconCx + plusLen / 2f, iconCy, paint);
+            canvas.drawLine(iconCx, iconCy - plusLen / 2f, iconCx, iconCy + plusLen / 2f, paint);
+
+            // Vertical divider between the icon and the text.
+            paint.setColor(Color.argb(255, 217, 217, 217));
+            paint.setStrokeWidth(dividerWidth);
+            paint.setStrokeCap(Paint.Cap.BUTT);
+            canvas.drawLine(dividerX, top + ViewUtil.Dp2Px(getContext(), 6), dividerX, bottom - ViewUtil.Dp2Px(getContext(), 6), paint);
+        }
+
+        // Price (top, black) + change % (below, colored), left-aligned after the divider.
         int oldTextColor = mMaxMinPaint.getColor();
         Paint.Align oldAlign = mMaxMinPaint.getTextAlign();
-        mMaxMinPaint.setTextAlign(Paint.Align.RIGHT);
-        float textRight = rightEdge - textPaddingH;
+        mMaxMinPaint.setTextAlign(Paint.Align.LEFT);
+        float textLeft = (showPlus ? dividerX : left) + textPaddingH;
         float priceBaseY = top + innerPadV - mm.ascent;
         float changeBaseY = priceBaseY + lineH + lineGap;
         mMaxMinPaint.setColor(Color.BLACK);
-        canvas.drawText(text, textRight, priceBaseY, mMaxMinPaint);
+        canvas.drawText(text, textLeft, priceBaseY, mMaxMinPaint);
         mMaxMinPaint.setColor(changeColor);
-        canvas.drawText(changeText, textRight, changeBaseY, mMaxMinPaint);
+        canvas.drawText(changeText, textLeft, changeBaseY, mMaxMinPaint);
         mMaxMinPaint.setColor(oldTextColor);
         mMaxMinPaint.setTextAlign(oldAlign);
-
-        // Plus circle (black) to the left of the pill.
-        if (showPlus) {
-            float iconCx = whiteLeft - plusGap - plusRadius;
-            float iconCy = (top + bottom) / 2f;
-            paint.setStyle(Paint.Style.FILL);
-            paint.setColor(Color.BLACK);
-            canvas.drawCircle(iconCx, iconCy, plusRadius, paint);
-
-            paint.setStyle(Paint.Style.STROKE);
-            paint.setColor(Color.WHITE);
-            paint.setStrokeWidth(Math.max(2f, plusRadius * 0.2f));
-            paint.setStrokeCap(Paint.Cap.ROUND);
-            float plusLen = plusRadius;
-            canvas.drawLine(iconCx - plusLen / 2f, iconCy, iconCx + plusLen / 2f, iconCy, paint);
-            canvas.drawLine(iconCx, iconCy - plusLen / 2f, iconCx, iconCy + plusLen / 2f, paint);
-        }
 
         // --- Crosshair lines (thin, dashed) ---
         float pointX = scrollXtoViewX(getItemMiddleScrollX(mSelectedIndex));
@@ -1123,11 +1134,11 @@ public abstract class BaseKLineChartView extends ScrollAndScaleView implements D
         // Vertical line through the main + sub chart areas.
         canvas.drawLine(pointX, mMainRect.top, pointX, mChildRect.bottom, mSelectedXLinePaint);
 
-        // --- Selected point dot (small) ---
+        // --- Selected point dot (small, ~25% of the original size) ---
         mSelectCenterPaint.setColor(configManager.selectedPointContentColor);
         mSelectCenterBackgroundPaint.setColor(configManager.selectedPointContainerColor);
-        float dotOuter = Math.max(ViewUtil.Dp2Px(getContext(), 3), configManager.candleWidth * mScaleX * 0.5f);
-        float dotInner = dotOuter * 0.62f;
+        float dotOuter = Math.max(ViewUtil.Dp2Px(getContext(), 2), configManager.candleWidth * mScaleX * 0.25f);
+        float dotInner = dotOuter * 0.6f;
         RectF backgroundRect = new RectF(pointX - dotOuter, y - dotOuter, pointX + dotOuter, y + dotOuter);
         RectF rect = new RectF(pointX - dotInner, y - dotInner, pointX + dotInner, y + dotInner);
         canvas.drawOval(backgroundRect, mSelectCenterBackgroundPaint);

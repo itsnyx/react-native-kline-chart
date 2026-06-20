@@ -1304,9 +1304,9 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
         context.strokePath()
         context.restoreGState()
 
-        // --- Selected point dot (small) ---
-        let dotOuter = max(3, configManager.candleWidth * 0.5)
-        let dotInner = dotOuter * 0.62
+        // --- Selected point dot (small, ~25% of the original size) ---
+        let dotOuter = max(2.5, configManager.candleWidth * 0.25)
+        let dotInner = dotOuter * 0.6
         context.addArc(center: CGPoint(x: x, y: y), radius: dotOuter, startAngle: 0, endAngle: CGFloat(Double.pi * 2), clockwise: true)
         context.setFillColor(configManager.selectedPointContainerColor.cgColor)
         context.fillPath()
@@ -1314,11 +1314,12 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
         context.setFillColor(configManager.selectedPointContentColor.cgColor)
         context.fillPath()
 
-        // --- Right-side hover price pill: price on top, selected candle change % below ---
-        let selModel = visibleModelArray[selectedIndex - visibleRange.lowerBound]
+        // --- Hover price pill: [ + ] | price (top) + change % (below) ---
+        // The change % is the crosshair price relative to the latest live price, so it updates
+        // as the finger moves (both vertically and across candles).
         let priceTitle = configManager.precision(value, configManager.price)
-        let openV = selModel.open
-        let changePct: CGFloat = openV != 0 ? (selModel.close - openV) / openV * 100 : 0
+        let liveClose = configManager.modelArray.last?.close ?? 0
+        let changePct: CGFloat = liveClose != 0 ? (value - liveClose) / liveClose * 100 : 0
         let changeColor = changePct >= 0 ? configManager.increaseColor : configManager.decreaseColor
         let changeTitle = String(format: "%@%@%%", changePct >= 0 ? "+" : "", configManager.precision(changePct, 2))
 
@@ -1332,26 +1333,23 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
         let textPaddingH: CGFloat = 8
         let contentTextWidth = max(priceWidth, changeWidth)
         let pillHeight = textHeight * 2 + lineGap + innerPadV * 2
-        let whitePillWidth = contentTextWidth + textPaddingH * 2
 
         let showPlus = configManager.showPlusIcon
-        let plusRadius: CGFloat = showPlus ? pillHeight * 0.36 : 0
-        let plusGap: CGFloat = showPlus ? 5 : 0
-        let totalWidth = whitePillWidth + (showPlus ? plusRadius * 2 + plusGap : 0)
+        let iconAreaWidth: CGFloat = showPlus ? pillHeight : 0 // square area on the left for the "+"
+        let dividerWidth: CGFloat = showPlus ? (1 / UIScreen.main.scale) : 0
+        let pillWidth = iconAreaWidth + dividerWidth + contentTextWidth + textPaddingH * 2
 
         let rightEdge = allWidth
         let marginY: CGFloat = 2
         let pillMinY = max(marginY, min(bounds.size.height - marginY - pillHeight, y - pillHeight / 2))
-
-        let whitePillRect = CGRect(x: rightEdge - whitePillWidth, y: pillMinY, width: whitePillWidth, height: pillHeight)
-        // Full hit/overlap rect, including the plus circle (used by onNewOrder tap + panel layout).
-        selectedPricePillRect = CGRect(x: rightEdge - totalWidth, y: pillMinY, width: totalWidth, height: pillHeight)
+        let pillRect = CGRect(x: rightEdge - pillWidth, y: pillMinY, width: pillWidth, height: pillHeight)
+        selectedPricePillRect = pillRect
 
         context.saveGState()
 
         // White pill background + subtle border.
         let radius = pillHeight / 2
-        let pillPath = UIBezierPath(roundedRect: whitePillRect, cornerRadius: radius)
+        let pillPath = UIBezierPath(roundedRect: pillRect, cornerRadius: radius)
         context.setFillColor(UIColor.white.cgColor)
         context.addPath(pillPath.cgPath)
         context.fillPath()
@@ -1360,21 +1358,22 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
         context.addPath(pillPath.cgPath)
         context.strokePath()
 
-        // Price (top, black) + change % (below, colored), both right-aligned.
-        let priceY = whitePillRect.minY + innerPadV
-        let changeY = priceY + textHeight + lineGap
-        mainDraw.drawText(title: priceTitle, point: CGPoint(x: whitePillRect.maxX - textPaddingH - priceWidth, y: priceY), color: UIColor.black, font: font, context: context, configManager: configManager)
-        mainDraw.drawText(title: changeTitle, point: CGPoint(x: whitePillRect.maxX - textPaddingH - changeWidth, y: changeY), color: changeColor, font: font, context: context, configManager: configManager)
-
-        // Plus circle (black) to the left of the pill.
+        let dividerX = pillRect.minX + iconAreaWidth
         if showPlus {
-            let iconCenter = CGPoint(x: whitePillRect.minX - plusGap - plusRadius, y: whitePillRect.midY)
-            context.addArc(center: iconCenter, radius: plusRadius, startAngle: 0, endAngle: CGFloat(Double.pi * 2), clockwise: true)
+            // "+" button: black circle with a white border ring + white plus glyph.
+            let iconCenter = CGPoint(x: pillRect.minX + iconAreaWidth / 2, y: pillRect.midY)
+            let circleRadius = (pillHeight - 6) / 2
+            context.addArc(center: iconCenter, radius: circleRadius, startAngle: 0, endAngle: CGFloat(Double.pi * 2), clockwise: true)
             context.setFillColor(UIColor.black.cgColor)
             context.fillPath()
+            // White border ring around the black circle.
+            context.addArc(center: iconCenter, radius: circleRadius, startAngle: 0, endAngle: CGFloat(Double.pi * 2), clockwise: true)
+            context.setStrokeColor(UIColor.white.cgColor)
+            context.setLineWidth(max(1.5, circleRadius * 0.16))
+            context.strokePath()
 
-            let plusStroke: CGFloat = max(1.2, plusRadius * 0.2)
-            let plusLen: CGFloat = plusRadius
+            let plusStroke: CGFloat = max(1.2, circleRadius * 0.22)
+            let plusLen: CGFloat = circleRadius
             context.setStrokeColor(UIColor.white.cgColor)
             context.setLineWidth(plusStroke)
             context.setLineCap(.round)
@@ -1383,7 +1382,21 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
             context.move(to: CGPoint(x: iconCenter.x, y: iconCenter.y - plusLen / 2))
             context.addLine(to: CGPoint(x: iconCenter.x, y: iconCenter.y + plusLen / 2))
             context.strokePath()
+
+            // Vertical divider between the icon and the text.
+            context.setStrokeColor(UIColor(white: 0.85, alpha: 1).cgColor)
+            context.setLineWidth(max(1 / UIScreen.main.scale, dividerWidth))
+            context.move(to: CGPoint(x: dividerX, y: pillRect.minY + 6))
+            context.addLine(to: CGPoint(x: dividerX, y: pillRect.maxY - 6))
+            context.strokePath()
         }
+
+        // Price (top, black) + change % (below, colored), left-aligned after the divider.
+        let textX = (showPlus ? dividerX : pillRect.minX) + textPaddingH
+        let priceY = pillRect.minY + innerPadV
+        let changeY = priceY + textHeight + lineGap
+        mainDraw.drawText(title: priceTitle, point: CGPoint(x: textX, y: priceY), color: UIColor.black, font: font, context: context, configManager: configManager)
+        mainDraw.drawText(title: changeTitle, point: CGPoint(x: textX, y: changeY), color: changeColor, font: font, context: context, configManager: configManager)
 
         context.restoreGState()
 
