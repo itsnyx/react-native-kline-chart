@@ -1320,7 +1320,6 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
         let priceTitle = configManager.precision(value, configManager.price)
         let liveClose = configManager.modelArray.last?.close ?? 0
         let changePct: CGFloat = liveClose != 0 ? (value - liveClose) / liveClose * 100 : 0
-        let changeColor = changePct >= 0 ? configManager.increaseColor : configManager.decreaseColor
         let changeTitle = String(format: "%@%@%%", changePct >= 0 ? "+" : "", configManager.precision(changePct, 2))
 
         let font = configManager.createFont(configManager.candleTextFontSize)
@@ -1362,7 +1361,7 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
         if showPlus {
             // "+" button: black circle with a white border ring + white plus glyph.
             let iconCenter = CGPoint(x: pillRect.minX + iconAreaWidth / 2, y: pillRect.midY)
-            let circleRadius = (pillHeight - 6) / 2
+            let circleRadius = (pillHeight - 6) / 2 * 0.5
             context.addArc(center: iconCenter, radius: circleRadius, startAngle: 0, endAngle: CGFloat(Double.pi * 2), clockwise: true)
             context.setFillColor(UIColor.black.cgColor)
             context.fillPath()
@@ -1396,7 +1395,7 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
         let priceY = pillRect.minY + innerPadV
         let changeY = priceY + textHeight + lineGap
         mainDraw.drawText(title: priceTitle, point: CGPoint(x: textX, y: priceY), color: UIColor.black, font: font, context: context, configManager: configManager)
-        mainDraw.drawText(title: changeTitle, point: CGPoint(x: textX, y: changeY), color: changeColor, font: font, context: context, configManager: configManager)
+        mainDraw.drawText(title: changeTitle, point: CGPoint(x: textX, y: changeY), color: UIColor.black, font: font, context: context, configManager: configManager)
 
         context.restoreGState()
 

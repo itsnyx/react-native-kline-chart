@@ -1038,7 +1038,6 @@ public abstract class BaseKLineChartView extends ScrollAndScaleView implements D
         // finger moves (both vertically and across candles).
         float liveClose = mItemCount > 0 ? ((IKLine) getItem(mItemCount - 1)).getClosePrice() : 0f;
         float changePct = liveClose != 0 ? (selectedValue - liveClose) / liveClose * 100f : 0f;
-        int changeColor = changePct >= 0 ? configManager.increaseColor : configManager.decreaseColor;
         String changeText = (changePct >= 0 ? "+" : "") + String.format(java.util.Locale.US, "%.2f", changePct) + "%";
 
         Paint.FontMetrics mm = mMaxMinPaint.getFontMetrics();
@@ -1085,7 +1084,7 @@ public abstract class BaseKLineChartView extends ScrollAndScaleView implements D
             // "+" button: black circle with a white border ring + white plus glyph.
             float iconCx = left + iconAreaWidth / 2f;
             float iconCy = (top + bottom) / 2f;
-            float circleRadius = (pillHeight - ViewUtil.Dp2Px(getContext(), 8)) / 2f;
+            float circleRadius = (pillHeight - ViewUtil.Dp2Px(getContext(), 8)) / 2f * 0.5f;
             paint.setStyle(Paint.Style.FILL);
             paint.setColor(Color.BLACK);
             canvas.drawCircle(iconCx, iconCy, circleRadius, paint);
@@ -1119,7 +1118,6 @@ public abstract class BaseKLineChartView extends ScrollAndScaleView implements D
         float changeBaseY = priceBaseY + lineH + lineGap;
         mMaxMinPaint.setColor(Color.BLACK);
         canvas.drawText(text, textLeft, priceBaseY, mMaxMinPaint);
-        mMaxMinPaint.setColor(changeColor);
         canvas.drawText(changeText, textLeft, changeBaseY, mMaxMinPaint);
         mMaxMinPaint.setColor(oldTextColor);
         mMaxMinPaint.setTextAlign(oldAlign);
