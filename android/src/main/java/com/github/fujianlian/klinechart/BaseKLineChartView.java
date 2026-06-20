@@ -703,36 +703,70 @@ public abstract class BaseKLineChartView extends ScrollAndScaleView implements D
         long intervalMs = configManager.candleIntervalMs;
         long candleOpenMs = Math.round(lastEntity.id < 9_999_999_999L ? lastEntity.id * 1000.0 : lastEntity.id);
         long nowMs = System.currentTimeMillis();
+
+        // Compute when the current candle closes. We anchor on the candle's real open time
+        // (already aligned by the data source, e.g. UTC vs UTC+8 / Monday-vs-Sunday week start),
+        // rather than re-deriving boundaries from the Unix epoch (which would snap weekly candles
+        // to Thursdays). Monthly periods use calendar math; weekStartDay is only a fallback for
+        // when no usable open time is available.
+        long monthThresholdMs = 27L * 86_400_000L; // anything longer than ~27 days is monthly
         long candleCloseMs;
-        if (intervalMs >= 86_400_000L) {
-            // For daily+ candles, snap close to next UTC midnight boundary
-            long utcDayMs = 86_400_000L;
-            long currentUtcDayStart = (nowMs / utcDayMs) * utcDayMs;
-            candleCloseMs = currentUtcDayStart + utcDayMs;
-            if (intervalMs > 86_400_000L) {
-                long days = intervalMs / utcDayMs;
-                long epoch = 0L;
-                long periodMs = days * utcDayMs;
-                long periodStart = epoch + ((nowMs - epoch) / periodMs) * periodMs;
-                candleCloseMs = periodStart + periodMs;
-            }
-        } else {
+        if (intervalMs > monthThresholdMs) {
+            candleCloseMs = nextMonthCloseMs(candleOpenMs > 0 ? candleOpenMs : nowMs);
+        } else if (candleOpenMs > 0) {
             candleCloseMs = candleOpenMs + intervalMs;
+        } else {
+            // No reliable open time to anchor on.
+            candleCloseMs = fallbackCloseMs(nowMs, intervalMs);
         }
         long remainingMs = candleCloseMs - nowMs;
         if (remainingMs <= 0) return null;
         long remaining = remainingMs / 1000L;
 
-        if (intervalMs > 86_400_000L) {
-            int totalHours = (int) (remaining / 3600);
-            return String.format("%02dD:%02dH", totalHours / 24, totalHours % 24);
-        } else if (intervalMs == 86_400_000L) {
-            return String.format("%02d:%02d:%02d", (int)(remaining / 3600), (int)((remaining % 3600) / 60), (int)(remaining % 60));
+        // Format based on the actual remaining time, not the selected interval.
+        // - >= 1 day left  -> "DD:HH"
+        // - < 1 hour left  -> "MM:SS"
+        // - otherwise      -> "HH:MM:SS"
+        if (remaining >= 86_400L) {
+            int days = (int) (remaining / 86_400L);
+            int hours = (int) ((remaining % 86_400L) / 3600);
+            return String.format("%02dD:%02dH", days, hours);
         } else if (remaining < 3600) {
             return String.format("%02d:%02d", (int)(remaining / 60), (int)(remaining % 60));
         } else {
             return String.format("%02d:%02d:%02d", (int)(remaining / 3600), (int)((remaining % 3600) / 60), (int)(remaining % 60));
         }
+    }
+
+    /**
+     * First day of the calendar month following {@code openMs} (UTC), preserving the open's
+     * time-of-day. Adding a calendar month handles 28-31 day months and works for both UTC- and
+     * UTC+8-aligned monthly opens (e.g. "1st 00:00 UTC" or "last-day 16:00 UTC").
+     */
+    private long nextMonthCloseMs(long openMs) {
+        java.util.Calendar cal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"));
+        cal.setTimeInMillis(openMs);
+        cal.add(java.util.Calendar.MONTH, 1);
+        return cal.getTimeInMillis();
+    }
+
+    /**
+     * Fallback close time when no candle open is available to anchor on. Weekly intervals use the
+     * configured {@code weekStartDay} (0=Sunday … 6=Saturday); other intervals fall back to
+     * epoch-aligned period boundaries.
+     */
+    private long fallbackCloseMs(long nowMs, long intervalMs) {
+        long dayMs = 86_400_000L;
+        long weekMs = 7L * dayMs;
+        if (intervalMs == weekMs) {
+            long daysSinceEpoch = nowMs / dayMs;
+            // Unix epoch (1970-01-01) was a Thursday → weekday index 4 with Sunday=0.
+            int weekdayNow = (int) ((daysSinceEpoch + 4) % 7);
+            int weekStart = ((weekdayNow - configManager.weekStartDay) % 7 + 7) % 7;
+            long weekStartMs = (daysSinceEpoch - weekStart) * dayMs;
+            return weekStartMs + weekMs;
+        }
+        return (nowMs / intervalMs) * intervalMs + intervalMs;
     }
 
     /**
@@ -995,129 +1029,109 @@ public abstract class BaseKLineChartView extends ScrollAndScaleView implements D
         String text = safeText(formatValue(selectedValue));
         float textWidth = mTextPaint.measureText(text);
 
-        // Right-side hover price pill (always on the right, over the y-axis labels).
+        // Right-side hover price pill: price on top, selected candle change % below.
         mSelectedPriceValue = selectedValue;
 
         boolean showPlus = configManager == null || configManager.showPlusIcon;
 
-        float pillPaddingV = ViewUtil.Dp2Px(getContext(), 4);
-        float pillHeight = Math.max(ViewUtil.Dp2Px(getContext(), 22), textHeight + pillPaddingV * 2f);
-        float iconInset = ViewUtil.Dp2Px(getContext(), 3);
-        float iconAreaWidth = showPlus ? pillHeight : 0; // square area on the left for the plus icon
+        // Selected candle change % = (close - open) / open * 100.
+        float openV = point.getOpenPrice();
+        float closeV = point.getClosePrice();
+        float changePct = openV != 0 ? (closeV - openV) / openV * 100f : 0f;
+        int changeColor = changePct >= 0 ? configManager.increaseColor : configManager.decreaseColor;
+        String changeText = (changePct >= 0 ? "+" : "") + String.format(java.util.Locale.US, "%.2f", changePct) + "%";
+
+        Paint.FontMetrics mm = mMaxMinPaint.getFontMetrics();
+        float lineH = mm.descent - mm.ascent;
+        float priceWidth = mMaxMinPaint.measureText(text);
+        float changeWidth = mMaxMinPaint.measureText(changeText);
+        float contentTextWidth = Math.max(priceWidth, changeWidth);
+
+        float innerPadV = ViewUtil.Dp2Px(getContext(), 5);
+        float lineGap = ViewUtil.Dp2Px(getContext(), 2);
         float textPaddingH = ViewUtil.Dp2Px(getContext(), 8);
-        float dividerWidth = showPlus ? 1f : 0f;
+        float pillHeight = lineH * 2f + lineGap + innerPadV * 2f;
+        float whitePillWidth = contentTextWidth + textPaddingH * 2f;
 
-        float pillWidth = iconAreaWidth + dividerWidth + textWidth + textPaddingH * 2f;
+        float plusRadius = showPlus ? pillHeight * 0.36f : 0f;
+        float plusGap = showPlus ? ViewUtil.Dp2Px(getContext(), 5) : 0f;
+        float totalWidth = whitePillWidth + (showPlus ? plusRadius * 2f + plusGap : 0f);
+
         float rightEdge = mWidth;
-        float left = rightEdge - pillWidth;
-        float top = y - pillHeight / 2f;
-        float bottom = y + pillHeight / 2f;
-
-        // Clamp vertically inside the view.
         float marginY = 2f;
-        if (top < marginY) {
-            float shift = marginY - top;
-            top += shift;
-            bottom += shift;
-        }
-        if (bottom > getHeight() - marginY) {
-            float shift = bottom - (getHeight() - marginY);
-            top -= shift;
-            bottom -= shift;
-        }
+        float top = Math.max(marginY, Math.min(getHeight() - marginY - pillHeight, y - pillHeight / 2f));
+        float bottom = top + pillHeight;
+        float whiteLeft = rightEdge - whitePillWidth;
 
-        mSelectedPricePillRect.set(left, top, rightEdge, bottom);
+        // Full hit/overlap rect, including the plus circle (used by tap-to-trade + panel layout).
+        mSelectedPricePillRect.set(rightEdge - totalWidth, top, rightEdge, bottom);
         startX = 0;
-        endX = Math.max(0, left);
+        endX = Math.max(0, rightEdge - totalWidth);
 
-        // Background (white pill) + subtle border.
+        // White pill background + subtle border.
+        RectF whitePillRect = new RectF(whiteLeft, top, rightEdge, bottom);
         Paint paint = mSelectPointPaint;
         paint.setAntiAlias(true);
         paint.setStyle(Paint.Style.FILL);
         paint.setColor(Color.WHITE);
-        float radius = (bottom - top) / 2f;
-        canvas.drawRoundRect(mSelectedPricePillRect, radius, radius, paint);
+        float radius = pillHeight / 2f;
+        canvas.drawRoundRect(whitePillRect, radius, radius, paint);
 
         paint.setStyle(Paint.Style.STROKE);
         paint.setStrokeWidth(1f);
         paint.setColor(Color.argb(255, 217, 217, 217)); // light gray
-        canvas.drawRoundRect(mSelectedPricePillRect, radius, radius, paint);
+        canvas.drawRoundRect(whitePillRect, radius, radius, paint);
 
-        float dividerX = left + iconAreaWidth;
-        if (showPlus) {
-            // Plus icon: black circle + white plus.
-            float iconCx = left + iconAreaWidth / 2f;
-            float iconCy = (top + bottom) / 2f;
-            float circleRadius = (pillHeight - iconInset * 2f) / 2f;
-            paint.setStyle(Paint.Style.FILL);
-            paint.setColor(Color.BLACK);
-            canvas.drawCircle(iconCx, iconCy, circleRadius, paint);
-
-            paint.setStyle(Paint.Style.STROKE);
-            paint.setColor(Color.WHITE);
-            paint.setStrokeWidth(Math.max(2f, circleRadius * 0.18f));
-            paint.setStrokeCap(Paint.Cap.ROUND);
-            float plusLen = circleRadius;
-            canvas.drawLine(iconCx - plusLen / 2f, iconCy, iconCx + plusLen / 2f, iconCy, paint);
-            canvas.drawLine(iconCx, iconCy - plusLen / 2f, iconCx, iconCy + plusLen / 2f, paint);
-
-            // Divider.
-            paint.setStyle(Paint.Style.STROKE);
-            paint.setColor(Color.argb(255, 217, 217, 217));
-            paint.setStrokeWidth(dividerWidth);
-            canvas.drawLine(dividerX, top + ViewUtil.Dp2Px(getContext(), 6), dividerX, bottom - ViewUtil.Dp2Px(getContext(), 6), paint);
-        }
-
-        // Price text (black).
+        // Price (top, black) + change % (below, colored), both right-aligned.
         int oldTextColor = mMaxMinPaint.getColor();
         Paint.Align oldAlign = mMaxMinPaint.getTextAlign();
+        mMaxMinPaint.setTextAlign(Paint.Align.RIGHT);
+        float textRight = rightEdge - textPaddingH;
+        float priceBaseY = top + innerPadV - mm.ascent;
+        float changeBaseY = priceBaseY + lineH + lineGap;
         mMaxMinPaint.setColor(Color.BLACK);
-        mMaxMinPaint.setTextAlign(Paint.Align.LEFT);
-        float textX = (showPlus ? dividerX : left) + textPaddingH;
-        canvas.drawText(text, textX, fixTextY1((top + bottom) / 2f), mMaxMinPaint);
+        canvas.drawText(text, textRight, priceBaseY, mMaxMinPaint);
+        mMaxMinPaint.setColor(changeColor);
+        canvas.drawText(changeText, textRight, changeBaseY, mMaxMinPaint);
         mMaxMinPaint.setColor(oldTextColor);
         mMaxMinPaint.setTextAlign(oldAlign);
 
-        // k线图横线
-        canvas.drawLine(startX, y,  endX, y, mSelectedXLinePaint);
+        // Plus circle (black) to the left of the pill.
+        if (showPlus) {
+            float iconCx = whiteLeft - plusGap - plusRadius;
+            float iconCy = (top + bottom) / 2f;
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(Color.BLACK);
+            canvas.drawCircle(iconCx, iconCy, plusRadius, paint);
 
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setColor(Color.WHITE);
+            paint.setStrokeWidth(Math.max(2f, plusRadius * 0.2f));
+            paint.setStrokeCap(Paint.Cap.ROUND);
+            float plusLen = plusRadius;
+            canvas.drawLine(iconCx - plusLen / 2f, iconCy, iconCx + plusLen / 2f, iconCy, paint);
+            canvas.drawLine(iconCx, iconCy - plusLen / 2f, iconCx, iconCy + plusLen / 2f, paint);
+        }
 
-        // k线图竖线
-        mSelectedXLinePaint.setStrokeWidth(1.5f);
-        mSelectedXLinePaint.setColor(configManager.candleTextColor);
-
-        // 柱状图竖线
-        LinearGradient linearGradient = new LinearGradient(
-            0,
-            0,
-            0,
-            mChildRect.bottom - mMainRect.top,
-            configManager.panelGradientColorList,
-            configManager.panelGradientLocationList,
-            Shader.TileMode.CLAMP
-        );
-        mSelectedYLinePaint.setShader(linearGradient);
-
+        // --- Crosshair lines (thin, dashed) ---
         float pointX = scrollXtoViewX(getItemMiddleScrollX(mSelectedIndex));
-        mSelectedYLinePaint.setStrokeWidth(mScaleX * configManager.candleWidth);
-        canvas.drawLine(pointX, 0, pointX, mChildRect.bottom, mSelectedYLinePaint);
+        mSelectedXLinePaint.setColor(configManager.candleTextColor);
+        mSelectedXLinePaint.setStrokeWidth(Math.max(1f, ViewUtil.Dp2Px(getContext(), 0.5f)));
+        mSelectedXLinePaint.setPathEffect(new DashPathEffect(new float[]{6, 6}, 0));
+        // Horizontal line up to the pill's left edge (so it doesn't cross the white pill).
+        canvas.drawLine(startX, y, endX, y, mSelectedXLinePaint);
+        // Vertical line through the main + sub chart areas.
+        canvas.drawLine(pointX, mMainRect.top, pointX, mChildRect.bottom, mSelectedXLinePaint);
 
-
-
+        // --- Selected point dot (small) ---
         mSelectCenterPaint.setColor(configManager.selectedPointContentColor);
         mSelectCenterBackgroundPaint.setColor(configManager.selectedPointContainerColor);
-        // Inner (white) dot radius.
-        float radiusX = 4f * this.mScaleX;
-        float radiusY = 4f * this.mScaleX;
-        RectF rect = new RectF(pointX - radiusX, y - radiusY, pointX + radiusX, y + radiusY);
-        // Outer halo radius.
-        radiusX *= 2.5f;
-        radiusY *= 2.5f;
-        RectF backgroundRect = new RectF(pointX - radiusX, y - radiusY, pointX + radiusX, y + radiusY);
-        if (pointX > startX && pointX < endX) {
-            canvas.drawOval(backgroundRect, mSelectCenterBackgroundPaint);
-            canvas.drawOval(rect, mSelectCenterPaint);
-        }
+        float dotOuter = Math.max(ViewUtil.Dp2Px(getContext(), 3), configManager.candleWidth * mScaleX * 0.5f);
+        float dotInner = dotOuter * 0.62f;
+        RectF backgroundRect = new RectF(pointX - dotOuter, y - dotOuter, pointX + dotOuter, y + dotOuter);
+        RectF rect = new RectF(pointX - dotInner, y - dotInner, pointX + dotInner, y + dotInner);
+        canvas.drawOval(backgroundRect, mSelectCenterBackgroundPaint);
+        canvas.drawOval(rect, mSelectCenterPaint);
 
 
 
@@ -1485,6 +1499,13 @@ public abstract class BaseKLineChartView extends ScrollAndScaleView implements D
         mSelectedY = e.getY();
         if (lastIndex != mSelectedIndex) {
             onSelectedChanged(this, getItem(mSelectedIndex), mSelectedIndex);
+            // Fire a light haptic whenever the snapped candle changes.
+            if (configManager != null && configManager.hapticOnSelection) {
+                performHapticFeedback(
+                    android.view.HapticFeedbackConstants.CLOCK_TICK,
+                    android.view.HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING
+                );
+            }
         }
         invalidate();
     }

@@ -163,7 +163,7 @@ class HTKLineConfigManager: NSObject {
     }
 
 
-    var candleLineWidth: CGFloat = 1
+    var candleLineWidth: CGFloat = 0.5
 
     var lineWidth: CGFloat = 1
 
@@ -260,6 +260,15 @@ class HTKLineConfigManager: NSObject {
     // optionList.configList.candleIntervalMs (e.g. 60000 for 1m, 3600000 for 1h).
     // Used by the countdown timer instead of the enum-based `time` field.
     var candleIntervalMs: Double = 0
+
+    // Whether to fire a light haptic when the selected candle index changes during long-press
+    // hover. Controlled from JS via optionList.configList.hapticOnSelection (default: false).
+    var hapticOnSelection: Bool = false
+
+    // The day a week starts on, used as a fallback when computing the weekly candle close time
+    // and no candle open is available to anchor on. 0=Sunday … 6=Saturday. Default: Monday (1),
+    // matching Bitget's UTC weekly alignment. Set from JS via optionList.configList.weekStartDay.
+    var weekStartDay: Int = 1
 
     // Optional base64-encoded logo image drawn in the center of the main chart,
     // behind the candles. Provided from JS via configList["centerLogoSource"].
@@ -573,6 +582,8 @@ class HTKLineConfigManager: NSObject {
         showCandleCountdown = configList["showCandleCountdown"] as? Bool ?? false
         drawingsEditable = configList["drawingsEditable"] as? Bool ?? true
         candleIntervalMs = (configList["candleIntervalMs"] as? NSNumber)?.doubleValue ?? 0
+        weekStartDay = (configList["weekStartDay"] as? NSNumber)?.intValue ?? 1
+        hapticOnSelection = configList["hapticOnSelection"] as? Bool ?? false
     }
 
 }

@@ -24,6 +24,10 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
 
     var selectedIndex = -1
 
+    /// Light haptic fired when the selected candle index changes during long-press hover
+    /// (gated by configManager.hapticOnSelection).
+    private lazy var selectionFeedbackGenerator = UIImpactFeedbackGenerator(style: .light)
+
     /// When selecting via long-press, we snap X to the nearest candle (selectedIndex),
     /// but keep Y free so the user can drag vertically to inspect arbitrary prices.
     /// Stored in view coordinates (same space as drawing).
@@ -1168,35 +1172,69 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
         let rawId = Double(lastModel.id)
         let candleOpenMs = rawId < 9_999_999_999 ? rawId * 1000.0 : rawId
         let nowMs = Date().timeIntervalSince1970 * 1000.0
+
+        // Compute when the current candle closes. We anchor on the candle's real open time
+        // (already aligned by the data source, e.g. UTC vs UTC+8 / Monday-vs-Sunday week start),
+        // rather than re-deriving boundaries from the Unix epoch (which would snap weekly candles
+        // to Thursdays). Monthly periods use calendar math; weekStartDay is only a fallback for
+        // when no usable open time is available.
+        let monthThresholdMs: Double = 27 * 86_400_000 // anything longer than ~27 days is monthly
         let candleCloseMs: Double
-        if intervalMs >= 86_400_000 {
-            let utcDayMs: Double = 86_400_000
-            let currentUtcDayStart = floor(nowMs / utcDayMs) * utcDayMs
-            if intervalMs > 86_400_000 {
-                let days = intervalMs / utcDayMs
-                let periodMs = days * utcDayMs
-                let periodStart = floor(nowMs / periodMs) * periodMs
-                candleCloseMs = periodStart + periodMs
-            } else {
-                candleCloseMs = currentUtcDayStart + utcDayMs
-            }
-        } else {
+        if intervalMs > monthThresholdMs {
+            candleCloseMs = nextMonthCloseMs(fromOpenMs: candleOpenMs > 0 ? candleOpenMs : nowMs)
+        } else if candleOpenMs > 0 {
             candleCloseMs = candleOpenMs + intervalMs
+        } else {
+            // No reliable open time to anchor on.
+            candleCloseMs = fallbackCloseMs(nowMs: nowMs, intervalMs: intervalMs)
         }
         let remainingMs = candleCloseMs - nowMs
         guard remainingMs > 0 else { return nil }
         let remaining = Int(remainingMs / 1000.0)
 
-        if intervalMs > 86_400_000 {
-            let totalHours = remaining / 3600
-            return String(format: "%02dD:%02dH", totalHours / 24, totalHours % 24)
-        } else if intervalMs == 86_400_000 {
-            return String(format: "%02d:%02d:%02d", remaining / 3600, (remaining % 3600) / 60, remaining % 60)
+        // Format based on the actual remaining time, not the selected interval.
+        // - >= 1 day left  -> "DD:HH"
+        // - < 1 hour left  -> "MM:SS"
+        // - otherwise      -> "HH:MM:SS"
+        if remaining >= 86_400 {
+            let days = remaining / 86_400
+            let hours = (remaining % 86_400) / 3600
+            return String(format: "%02dD:%02dH", days, hours)
         } else if remaining < 3600 {
             return String(format: "%02d:%02d", remaining / 60, remaining % 60)
         } else {
             return String(format: "%02d:%02d:%02d", remaining / 3600, (remaining % 3600) / 60, remaining % 60)
         }
+    }
+
+    /// First day of the calendar month following `openMs` (UTC), preserving the open's time-of-day.
+    /// Adding a calendar month handles 28-31 day months and works for both UTC- and UTC+8-aligned
+    /// monthly opens (e.g. "1st 00:00 UTC" or "last-day 16:00 UTC").
+    private func nextMonthCloseMs(fromOpenMs openMs: Double) -> Double {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC") ?? cal.timeZone
+        let openDate = Date(timeIntervalSince1970: openMs / 1000.0)
+        if let next = cal.date(byAdding: .month, value: 1, to: openDate) {
+            return next.timeIntervalSince1970 * 1000.0
+        }
+        return openMs + 30 * 86_400_000
+    }
+
+    /// Fallback close time when no candle open is available to anchor on. Weekly intervals use the
+    /// configured `weekStartDay` (0=Sunday … 6=Saturday); other intervals fall back to epoch-aligned
+    /// period boundaries.
+    private func fallbackCloseMs(nowMs: Double, intervalMs: Double) -> Double {
+        let dayMs: Double = 86_400_000
+        let weekMs: Double = 7 * dayMs
+        if intervalMs == weekMs {
+            let daysSinceEpoch = floor(nowMs / dayMs)
+            // Unix epoch (1970-01-01) was a Thursday → weekday index 4 with Sunday=0.
+            let weekdayNow = (Int(daysSinceEpoch) + 4) % 7
+            let weekStart = ((weekdayNow - configManager.weekStartDay) % 7 + 7) % 7
+            let weekStartMs = (daysSinceEpoch - Double(weekStart)) * dayMs
+            return weekStartMs + weekMs
+        }
+        return floor(nowMs / intervalMs) * intervalMs + intervalMs
     }
 
     /// Draws the remaining time until the current candle closes.
@@ -1252,84 +1290,91 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
         let value = valueFromY(y)
         selectedPriceValue = value
 
+        // --- Crosshair lines (thin, dashed) ---
+        context.saveGState()
         context.setStrokeColor(configManager.candleTextColor.cgColor)
-        context.setLineWidth(configManager.lineWidth / 2)
-        context.addLines(between: [CGPoint.init(x: 0, y: y), CGPoint.init(x: allWidth, y: y)])
+        context.setLineWidth(max(0.5, configManager.lineWidth / 2))
+        context.setLineDash(phase: 0, lengths: [3, 3])
+        // Horizontal line across the full width at the crosshair Y.
+        context.move(to: CGPoint(x: 0, y: y))
+        context.addLine(to: CGPoint(x: allWidth, y: y))
+        // Vertical line through the main + sub chart areas at the selected candle.
+        context.move(to: CGPoint(x: x, y: mainBaseY))
+        context.addLine(to: CGPoint(x: x, y: childBaseY + childHeight))
         context.strokePath()
+        context.restoreGState()
 
-        context.addArc(center: CGPoint.init(x: x, y: y), radius: configManager.candleWidth * 2 / 2, startAngle: 0, endAngle: CGFloat(Double.pi * 2), clockwise: true)
+        // --- Selected point dot (small) ---
+        let dotOuter = max(3, configManager.candleWidth * 0.5)
+        let dotInner = dotOuter * 0.62
+        context.addArc(center: CGPoint(x: x, y: y), radius: dotOuter, startAngle: 0, endAngle: CGFloat(Double.pi * 2), clockwise: true)
         context.setFillColor(configManager.selectedPointContainerColor.cgColor)
         context.fillPath()
-        // Inner (white) dot — keep it intentionally smaller than the outer halo for readability.
-        context.addArc(center: CGPoint.init(x: x, y: y), radius: configManager.candleWidth / 2.25 / 2, startAngle: 0, endAngle: CGFloat(Double.pi * 2), clockwise: true)
+        context.addArc(center: CGPoint(x: x, y: y), radius: dotInner, startAngle: 0, endAngle: CGFloat(Double.pi * 2), clockwise: true)
         context.setFillColor(configManager.selectedPointContentColor.cgColor)
         context.fillPath()
 
-        let colorList = configManager.packGradientColorList(configManager.panelGradientColorList)
-        let locationList = configManager.panelGradientLocationList
-        if let gradient = CGGradient.init(colorSpace: CGColorSpaceCreateDeviceRGB(), colorComponents: colorList, locations: locationList, count: locationList.count) {
-            let start = mainBaseY
-            let end = childBaseY + childHeight
-            context.addRect(CGRect.init(x: x - configManager.candleWidth / 2, y: start, width: configManager.candleWidth, height: end - start))
-            context.clip()
-            context.drawLinearGradient(gradient, start: CGPoint.init(x: 0, y: start), end: CGPoint.init(x: 0, y: end), options: .drawsBeforeStartLocation)
-            context.resetClip()
-        }
+        // --- Right-side hover price pill: price on top, selected candle change % below ---
+        let selModel = visibleModelArray[selectedIndex - visibleRange.lowerBound]
+        let priceTitle = configManager.precision(value, configManager.price)
+        let openV = selModel.open
+        let changePct: CGFloat = openV != 0 ? (selModel.close - openV) / openV * 100 : 0
+        let changeColor = changePct >= 0 ? configManager.increaseColor : configManager.decreaseColor
+        let changeTitle = String(format: "%@%@%%", changePct >= 0 ? "+" : "", configManager.precision(changePct, 2))
 
-        // Right-side hover price pill (always on the right, over the y-axis labels).
-        let title = configManager.precision(value, configManager.price)
         let font = configManager.createFont(configManager.candleTextFontSize)
-        let textWidth = mainDraw.textWidth(title: title, font: font)
+        let priceWidth = mainDraw.textWidth(title: priceTitle, font: font)
+        let changeWidth = mainDraw.textWidth(title: changeTitle, font: font)
         let textHeight = mainDraw.textHeight(font: font)
 
-        let pillPaddingV: CGFloat = 4
-        let pillHeight: CGFloat = max(22, textHeight + pillPaddingV * 2)
-        let iconInset: CGFloat = 3
-        let showPlus = configManager.showPlusIcon
-        let iconAreaWidth: CGFloat = showPlus ? pillHeight : 0 // square area on the left for the plus icon
+        let innerPadV: CGFloat = 5
+        let lineGap: CGFloat = 2
         let textPaddingH: CGFloat = 8
-        let dividerWidth: CGFloat = showPlus ? (1 / UIScreen.main.scale) : 0
+        let contentTextWidth = max(priceWidth, changeWidth)
+        let pillHeight = textHeight * 2 + lineGap + innerPadV * 2
+        let whitePillWidth = contentTextWidth + textPaddingH * 2
 
-        let pillWidth = iconAreaWidth + dividerWidth + textWidth + textPaddingH * 2
+        let showPlus = configManager.showPlusIcon
+        let plusRadius: CGFloat = showPlus ? pillHeight * 0.36 : 0
+        let plusGap: CGFloat = showPlus ? 5 : 0
+        let totalWidth = whitePillWidth + (showPlus ? plusRadius * 2 + plusGap : 0)
+
         let rightEdge = allWidth
-        var pillRect = CGRect(x: rightEdge - pillWidth, y: y - pillHeight / 2, width: pillWidth, height: pillHeight)
-
-        // Clamp vertically inside the view.
         let marginY: CGFloat = 2
-        if pillRect.minY < marginY {
-            pillRect.origin.y = marginY
-        }
-        if pillRect.maxY > bounds.size.height - marginY {
-            pillRect.origin.y = bounds.size.height - marginY - pillRect.height
-        }
+        let pillMinY = max(marginY, min(bounds.size.height - marginY - pillHeight, y - pillHeight / 2))
 
-        selectedPricePillRect = pillRect
+        let whitePillRect = CGRect(x: rightEdge - whitePillWidth, y: pillMinY, width: whitePillWidth, height: pillHeight)
+        // Full hit/overlap rect, including the plus circle (used by onNewOrder tap + panel layout).
+        selectedPricePillRect = CGRect(x: rightEdge - totalWidth, y: pillMinY, width: totalWidth, height: pillHeight)
 
         context.saveGState()
 
-        // Background (white pill) + subtle border.
-        let radius = pillRect.height / 2
-        let pillPath = UIBezierPath(roundedRect: pillRect, cornerRadius: radius)
+        // White pill background + subtle border.
+        let radius = pillHeight / 2
+        let pillPath = UIBezierPath(roundedRect: whitePillRect, cornerRadius: radius)
         context.setFillColor(UIColor.white.cgColor)
         context.addPath(pillPath.cgPath)
-        context.drawPath(using: .fill)
-
+        context.fillPath()
         context.setStrokeColor(UIColor(white: 0.85, alpha: 1).cgColor)
         context.setLineWidth(1 / UIScreen.main.scale)
         context.addPath(pillPath.cgPath)
-        context.drawPath(using: .stroke)
+        context.strokePath()
 
-        let dividerX = pillRect.minX + iconAreaWidth
+        // Price (top, black) + change % (below, colored), both right-aligned.
+        let priceY = whitePillRect.minY + innerPadV
+        let changeY = priceY + textHeight + lineGap
+        mainDraw.drawText(title: priceTitle, point: CGPoint(x: whitePillRect.maxX - textPaddingH - priceWidth, y: priceY), color: UIColor.black, font: font, context: context, configManager: configManager)
+        mainDraw.drawText(title: changeTitle, point: CGPoint(x: whitePillRect.maxX - textPaddingH - changeWidth, y: changeY), color: changeColor, font: font, context: context, configManager: configManager)
+
+        // Plus circle (black) to the left of the pill.
         if showPlus {
-            // Plus icon: black circle + white plus.
-            let iconCenter = CGPoint(x: pillRect.minX + iconAreaWidth / 2, y: pillRect.midY)
-            let circleRadius = (pillHeight - iconInset * 2) / 2
-            context.addArc(center: iconCenter, radius: circleRadius, startAngle: 0, endAngle: CGFloat(Double.pi * 2), clockwise: true)
+            let iconCenter = CGPoint(x: whitePillRect.minX - plusGap - plusRadius, y: whitePillRect.midY)
+            context.addArc(center: iconCenter, radius: plusRadius, startAngle: 0, endAngle: CGFloat(Double.pi * 2), clockwise: true)
             context.setFillColor(UIColor.black.cgColor)
             context.fillPath()
 
-            let plusStroke: CGFloat = max(1.2, circleRadius * 0.18)
-            let plusLen: CGFloat = circleRadius * 1.0
+            let plusStroke: CGFloat = max(1.2, plusRadius * 0.2)
+            let plusLen: CGFloat = plusRadius
             context.setStrokeColor(UIColor.white.cgColor)
             context.setLineWidth(plusStroke)
             context.setLineCap(.round)
@@ -1338,21 +1383,7 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
             context.move(to: CGPoint(x: iconCenter.x, y: iconCenter.y - plusLen / 2))
             context.addLine(to: CGPoint(x: iconCenter.x, y: iconCenter.y + plusLen / 2))
             context.strokePath()
-
-            // Divider.
-            context.setStrokeColor(UIColor(white: 0.85, alpha: 1).cgColor)
-            context.setLineWidth(dividerWidth)
-            context.move(to: CGPoint(x: dividerX, y: pillRect.minY + 6))
-            context.addLine(to: CGPoint(x: dividerX, y: pillRect.maxY - 6))
-            context.strokePath()
         }
-
-        // Price text (black).
-        let textPoint = CGPoint(
-            x: (showPlus ? dividerX : pillRect.minX) + textPaddingH,
-            y: pillRect.midY - textHeight / 2
-        )
-        mainDraw.drawText(title: title, point: textPoint, color: UIColor.black, font: font, context: context, configManager: configManager)
 
         context.restoreGState()
 
@@ -1602,7 +1633,15 @@ extension HTKLineView: UIScrollViewDelegate {
         if itemWidth > 0, !configManager.modelArray.isEmpty {
             // X snaps to candle index; Y follows the finger (clamped during draw).
             let index = Int(floor(xInContent / itemWidth))
-            selectedIndex = max(0, min(index, configManager.modelArray.count - 1))
+            let newIndex = max(0, min(index, configManager.modelArray.count - 1))
+            // Fire a light haptic whenever the snapped candle changes (not on finger-up).
+            if configManager.hapticOnSelection,
+               newIndex != selectedIndex,
+               gesture.state == .began || gesture.state == .changed {
+                selectionFeedbackGenerator.impactOccurred()
+                selectionFeedbackGenerator.prepare()
+            }
+            selectedIndex = newIndex
             selectedY = viewY
         } else {
             selectedIndex = -1

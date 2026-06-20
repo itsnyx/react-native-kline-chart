@@ -118,6 +118,15 @@ public class HTKLineConfigManager {
     // Used by the countdown timer instead of the enum-based `time` field.
     public long candleIntervalMs = 0;
 
+    // The day a week starts on, used as a fallback when computing the weekly candle close time
+    // and no candle open is available to anchor on. 0=Sunday … 6=Saturday. Default: Monday (1),
+    // matching Bitget's UTC weekly alignment. Set from JS via optionList.configList.weekStartDay.
+    public int weekStartDay = 1;
+
+    // Whether to fire a light haptic when the selected candle index changes during long-press
+    // hover. Controlled from JS via optionList.configList.hapticOnSelection (default: false).
+    public boolean hapticOnSelection = false;
+
 
 	public PrimaryStatus primaryStatus = PrimaryStatus.MA;
 
@@ -547,6 +556,22 @@ public class HTKLineConfigManager {
             this.candleIntervalMs = ((Number) candleIntervalMsObj).longValue();
         } else {
             this.candleIntervalMs = 0;
+        }
+
+        Object weekStartDayObj = configList.get("weekStartDay");
+        if (weekStartDayObj instanceof Number) {
+            this.weekStartDay = ((Number) weekStartDayObj).intValue();
+        } else {
+            this.weekStartDay = 1;
+        }
+
+        Object hapticOnSelectionObj = configList.get("hapticOnSelection");
+        if (hapticOnSelectionObj instanceof Boolean) {
+            this.hapticOnSelection = (Boolean) hapticOnSelectionObj;
+        } else if (hapticOnSelectionObj instanceof Number) {
+            this.hapticOnSelection = ((Number) hapticOnSelectionObj).intValue() != 0;
+        } else {
+            this.hapticOnSelection = false;
         }
 
         Object drawingsEditableObj = configList.get("drawingsEditable");
