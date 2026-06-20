@@ -1322,19 +1322,23 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
         let changePct: CGFloat = liveClose != 0 ? (value - liveClose) / liveClose * 100 : 0
         let changeTitle = String(format: "%@%@%%", changePct >= 0 ? "+" : "", configManager.precision(changePct, 2))
 
-        let font = configManager.createFont(configManager.candleTextFontSize)
+        let font = configManager.createFont(max(8, configManager.candleTextFontSize * 0.85))
         let priceWidth = mainDraw.textWidth(title: priceTitle, font: font)
         let changeWidth = mainDraw.textWidth(title: changeTitle, font: font)
         let textHeight = mainDraw.textHeight(font: font)
 
-        let innerPadV: CGFloat = 5
-        let lineGap: CGFloat = 2
-        let textPaddingH: CGFloat = 8
+        let innerPadV: CGFloat = 3
+        let lineGap: CGFloat = 1
+        let textPaddingH: CGFloat = 6
         let contentTextWidth = max(priceWidth, changeWidth)
         let pillHeight = textHeight * 2 + lineGap + innerPadV * 2
 
         let showPlus = configManager.showPlusIcon
-        let iconAreaWidth: CGFloat = showPlus ? pillHeight : 0 // square area on the left for the "+"
+        // Icon area hugs the (small) circle with minimal padding instead of being a full square.
+        let circleRadius: CGFloat = showPlus ? (pillHeight - 6) / 2 * 0.5 : 0
+        let iconLeftPad: CGFloat = 5
+        let iconRightPad: CGFloat = 4
+        let iconAreaWidth: CGFloat = showPlus ? (iconLeftPad + circleRadius * 2 + iconRightPad) : 0
         let dividerWidth: CGFloat = showPlus ? (1 / UIScreen.main.scale) : 0
         let pillWidth = iconAreaWidth + dividerWidth + contentTextWidth + textPaddingH * 2
 
@@ -1360,8 +1364,7 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
         let dividerX = pillRect.minX + iconAreaWidth
         if showPlus {
             // "+" button: black circle with a white border ring + white plus glyph.
-            let iconCenter = CGPoint(x: pillRect.minX + iconAreaWidth / 2, y: pillRect.midY)
-            let circleRadius = (pillHeight - 6) / 2 * 0.5
+            let iconCenter = CGPoint(x: pillRect.minX + iconLeftPad + circleRadius, y: pillRect.midY)
             context.addArc(center: iconCenter, radius: circleRadius, startAngle: 0, endAngle: CGFloat(Double.pi * 2), clockwise: true)
             context.setFillColor(UIColor.black.cgColor)
             context.fillPath()

@@ -1040,18 +1040,26 @@ public abstract class BaseKLineChartView extends ScrollAndScaleView implements D
         float changePct = liveClose != 0 ? (selectedValue - liveClose) / liveClose * 100f : 0f;
         String changeText = (changePct >= 0 ? "+" : "") + String.format(java.util.Locale.US, "%.2f", changePct) + "%";
 
+        // Slightly smaller text for the pill (restored after drawing the pill text).
+        float pillOldTextSize = mMaxMinPaint.getTextSize();
+        mMaxMinPaint.setTextSize(pillOldTextSize * 0.85f);
+
         Paint.FontMetrics mm = mMaxMinPaint.getFontMetrics();
         float lineH = mm.descent - mm.ascent;
         float priceWidth = mMaxMinPaint.measureText(text);
         float changeWidth = mMaxMinPaint.measureText(changeText);
         float contentTextWidth = Math.max(priceWidth, changeWidth);
 
-        float innerPadV = ViewUtil.Dp2Px(getContext(), 5);
-        float lineGap = ViewUtil.Dp2Px(getContext(), 2);
-        float textPaddingH = ViewUtil.Dp2Px(getContext(), 8);
+        float innerPadV = ViewUtil.Dp2Px(getContext(), 3);
+        float lineGap = ViewUtil.Dp2Px(getContext(), 1);
+        float textPaddingH = ViewUtil.Dp2Px(getContext(), 6);
         float pillHeight = lineH * 2f + lineGap + innerPadV * 2f;
 
-        float iconAreaWidth = showPlus ? pillHeight : 0f; // square area on the left for the "+"
+        // Icon area hugs the (small) circle with minimal padding instead of being a full square.
+        float circleRadius = showPlus ? (pillHeight - ViewUtil.Dp2Px(getContext(), 8)) / 2f * 0.5f : 0f;
+        float iconLeftPad = ViewUtil.Dp2Px(getContext(), 5);
+        float iconRightPad = ViewUtil.Dp2Px(getContext(), 4);
+        float iconAreaWidth = showPlus ? (iconLeftPad + circleRadius * 2f + iconRightPad) : 0f;
         float dividerWidth = showPlus ? 1f : 0f;
         float pillWidth = iconAreaWidth + dividerWidth + contentTextWidth + textPaddingH * 2f;
 
@@ -1082,9 +1090,8 @@ public abstract class BaseKLineChartView extends ScrollAndScaleView implements D
         float dividerX = left + iconAreaWidth;
         if (showPlus) {
             // "+" button: black circle with a white border ring + white plus glyph.
-            float iconCx = left + iconAreaWidth / 2f;
+            float iconCx = left + iconLeftPad + circleRadius;
             float iconCy = (top + bottom) / 2f;
-            float circleRadius = (pillHeight - ViewUtil.Dp2Px(getContext(), 8)) / 2f * 0.5f;
             paint.setStyle(Paint.Style.FILL);
             paint.setColor(Color.BLACK);
             canvas.drawCircle(iconCx, iconCy, circleRadius, paint);
@@ -1121,6 +1128,7 @@ public abstract class BaseKLineChartView extends ScrollAndScaleView implements D
         canvas.drawText(changeText, textLeft, changeBaseY, mMaxMinPaint);
         mMaxMinPaint.setColor(oldTextColor);
         mMaxMinPaint.setTextAlign(oldAlign);
+        mMaxMinPaint.setTextSize(pillOldTextSize);
 
         // --- Crosshair lines (thin, dashed) ---
         float pointX = scrollXtoViewX(getItemMiddleScrollX(mSelectedIndex));
