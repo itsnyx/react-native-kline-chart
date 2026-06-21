@@ -328,10 +328,15 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
         }
     }
 
+    // Empty space kept to the right of the newest candle when scrolled to the end, so the
+    // latest candle isn't glued to the price axis. ~3 candle widths.
+    private var rightTailPadding: CGFloat { configManager.itemWidth * 3 }
+
     func reloadContentSize() {
         configManager.reloadScrollViewScale(scale)
-        // Content width is determined by candle count plus the configured right padding
-        let contentWidth = configManager.itemWidth * CGFloat(configManager.modelArray.count) + configManager.paddingRight
+        // Content width is determined by candle count plus the configured right padding and a
+        // small tail of ~3 candle widths so the newest candle keeps some breathing room.
+        let contentWidth = configManager.itemWidth * CGFloat(configManager.modelArray.count) + configManager.paddingRight + rightTailPadding
         contentSize = CGSize(width: contentWidth, height: frame.size.height)
     }
 
@@ -368,6 +373,11 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
 
         // Draw center logo (if provided) behind all candles/lines but inside the main chart area.
         drawCenterLogo(in: context)
+
+        // Background grid behind the candles, fixed to the viewport (not the scrolling content).
+        contextTranslate(context, contentOffset.x, { context in
+            drawGrid(context)
+        })
 
         contextTranslate(context, CGFloat(visibleRange.lowerBound) * configManager.itemWidth, { context in
             drawCandle(context)
@@ -616,7 +626,16 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
 
         let boundsChanged = lastKnownBoundsSize != bounds.size
         let contentChanged = lastKnownContentSize != contentSize
-        guard boundsChanged || contentChanged else { return }
+
+        // Always (re)apply a pending initial scroll-to-end as soon as we have a real width, even
+        // if neither bounds nor content changed since the last pass. Otherwise a layout pass that
+        // doesn't change sizes can skip the initial positioning and leave the chart parked on
+        // older candles (the "shows older candle on first render" bug).
+        let needsInitialScrollToEnd = configManager.shouldScrollToEnd
+            && !didApplyInitialScrollToEnd
+            && bounds.size.width > 0
+
+        guard boundsChanged || contentChanged || needsInitialScrollToEnd else { return }
 
         lastKnownBoundsSize = bounds.size
         lastKnownContentSize = contentSize
@@ -631,16 +650,27 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
             setContentOffset(CGPoint(x: maxOffsetX, y: 0), animated: false)
         }
 
-        // Apply initial "scroll to end" once we have a real width & content.
-        if configManager.shouldScrollToEnd,
-           !didApplyInitialScrollToEnd,
-           bounds.size.width > 0,
-           contentSize.width > bounds.size.width {
+        // Apply the pending initial "scroll to end" once we have a real width. We intentionally do
+        // not require contentSize > bounds: with few candles the end offset clamps to 0, which still
+        // keeps the newest candle visible.
+        if needsInitialScrollToEnd {
             scrollToEndIfPossible(animated: false)
         } else {
             // Ensure visibleRange matches the latest layout/offset (also triggers redraw).
             scrollViewDidScroll(self)
         }
+    }
+
+    /// Marks that the initial scroll-to-end still needs to be applied (e.g. data arrived before
+    /// the view had a real width). The next `layoutSubviews` will pin the chart to the newest candle.
+    func requestInitialScrollToEnd() {
+        didApplyInitialScrollToEnd = false
+        setNeedsLayout()
+    }
+
+    /// Marks the initial scroll-to-end as already applied (caller pinned to the end directly).
+    func markInitialScrollToEndApplied() {
+        didApplyInitialScrollToEnd = true
     }
 
     private func scrollToEndIfPossible(animated: Bool) {
@@ -831,6 +861,47 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
         // Light transparency so candles and grid remain clearly visible.
         context.setAlpha(0.10)
         image.draw(in: drawRect)
+        context.restoreGState()
+    }
+
+    /// Draws the background grid behind the candles: horizontal lines aligned with the
+    /// Y-axis price labels and vertical lines dividing the width into 5 regions (4 lines).
+    /// The color matches the Y-axis price text color but with a very low opacity so it is
+    /// barely noticeable.
+    func drawGrid(_ context: CGContext) {
+        guard allWidth > 0, mainHeight > 0 else {
+            return
+        }
+
+        let gridColor = configManager.textColor.withAlphaComponent(0.08)
+        // 1 physical pixel regardless of screen scale.
+        let lineWidth = 1.0 / UIScreen.main.scale
+
+        context.saveGState()
+        context.setStrokeColor(gridColor.cgColor)
+        context.setLineWidth(lineWidth)
+        context.setLineDash(phase: 0, lengths: [])
+
+        // Horizontal lines aligned with the Y-axis price labels (4 values => 4 lines).
+        let rowCount = 4
+        let rowDistance = mainHeight / CGFloat(max(1, rowCount - 1))
+        for i in 0..<rowCount {
+            let y = mainBaseY + rowDistance * CGFloat(i)
+            context.move(to: CGPoint(x: 0, y: y))
+            context.addLine(to: CGPoint(x: allWidth, y: y))
+        }
+
+        // Vertical lines: split the width into 5 regions with 4 lines.
+        let verticalRegions = 5
+        let columnSpace = allWidth / CGFloat(verticalRegions)
+        let bottom = childBaseY + childHeight
+        for i in 1..<verticalRegions {
+            let x = columnSpace * CGFloat(i)
+            context.move(to: CGPoint(x: x, y: mainBaseY))
+            context.addLine(to: CGPoint(x: x, y: bottom))
+        }
+
+        context.strokePath()
         context.restoreGState()
     }
 

@@ -104,6 +104,10 @@ public abstract class BaseKLineChartView extends ScrollAndScaleView implements D
 
     private Paint mGridPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
+    // Background grid drawn behind the candles: horizontal lines aligned with the
+    // Y-axis price labels and vertical lines dividing the width into 5 regions.
+    private Paint mBackgroundGridPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+
     private Paint mTextPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
     private Paint mMaxMinPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -255,6 +259,9 @@ public abstract class BaseKLineChartView extends ScrollAndScaleView implements D
         mClosePricePointPaint.setStrokeWidth(1);
 
         mClosePriceTrianglePaint.setStyle(Paint.Style.FILL);
+
+        mBackgroundGridPaint.setStyle(Paint.Style.STROKE);
+        mBackgroundGridPaint.setStrokeWidth(1f);
 
     }
 
@@ -512,28 +519,36 @@ public abstract class BaseKLineChartView extends ScrollAndScaleView implements D
      * @param canvas
      */
     private void drawGird(Canvas canvas) {
-//        //-----------------------上方k线图------------------------
-//        //横向的grid
-//        float rowSpace = mMainRect.height() / mGridRows;
-//        for (int i = 0; i <= mGridRows; i++) {
-//            canvas.drawLine(0, rowSpace * i + mMainRect.top, mWidth, rowSpace * i + mMainRect.top, mGridPaint);
-//        }
-//        //-----------------------下方子图------------------------
-//        if (mChildDraw != null) {
-//            canvas.drawLine(0, mVolRect.bottom, mWidth, mVolRect.bottom, mGridPaint);
-//            canvas.drawLine(0, mChildRect.bottom, mWidth, mChildRect.bottom, mGridPaint);
-//        } else {
-//            canvas.drawLine(0, mVolRect.bottom, mWidth, mVolRect.bottom, mGridPaint);
-//        }
-//        //纵向的grid
-//        float columnSpace = mWidth / mGridColumns;
-//        for (int i = 1; i < mGridColumns; i++) {
-//            canvas.drawLine(columnSpace * i, 0, columnSpace * i, mMainRect.bottom, mGridPaint);
-//            canvas.drawLine(columnSpace * i, mMainRect.bottom, columnSpace * i, mVolRect.bottom, mGridPaint);
-//            if (mChildDraw != null) {
-//                canvas.drawLine(columnSpace * i, mVolRect.bottom, columnSpace * i, mChildRect.bottom, mGridPaint);
-//            }
-//        }
+        if (mMainRect == null) {
+            return;
+        }
+
+        // Grid color = Y-axis price text color, but with a very low opacity so it is
+        // barely noticeable behind the candles.
+        int textColor = mTextPaint.getColor();
+        int gridColor = Color.argb(
+                (int) (0.08f * 255),
+                Color.red(textColor),
+                Color.green(textColor),
+                Color.blue(textColor)
+        );
+        mBackgroundGridPaint.setColor(gridColor);
+
+        // Horizontal lines aligned with the Y-axis price labels (mGridRows + 1 values).
+        float rowSpace = mMainRect.height() / mGridRows;
+        for (int i = 0; i <= mGridRows; i++) {
+            float y = rowSpace * i + mMainRect.top;
+            canvas.drawLine(0, y, mWidth, y, mBackgroundGridPaint);
+        }
+
+        // Vertical lines: split the width into 5 regions with 4 lines.
+        final int verticalRegions = 5;
+        float columnSpace = mWidth / (float) verticalRegions;
+        float bottom = mChildRect != null ? mChildRect.bottom : mMainRect.bottom;
+        for (int i = 1; i < verticalRegions; i++) {
+            float x = columnSpace * i;
+            canvas.drawLine(x, mMainRect.top, x, bottom, mBackgroundGridPaint);
+        }
     }
 
     private void animateClosePriceTo(float newPrice) {
@@ -1695,10 +1710,15 @@ public abstract class BaseKLineChartView extends ScrollAndScaleView implements D
         return (int) -(mWidth * 0.5f / mScaleX);
     }
 
+    // Empty space (in scroll-space units) kept to the right of the newest candle when scrolled
+    // to the end, so the latest candle isn't glued to the price axis. ~3 candle widths.
+    private static final float RIGHT_TAIL_CANDLES = 3f;
+
     public int getMaxScrollX() {
-        // Max scroll is based purely on data length and the configured right padding.
-        // Any additional "tail" spacing should be controlled via configList.paddingRight on the JS side.
-        int contentWidth = (int) Math.max((mDataLen - (mWidth - configManager.paddingRight) / mScaleX), 0);
+        // Max scroll is based on data length, the configured right padding, and a small tail of
+        // ~3 candle widths so the newest candle keeps some breathing room from the right edge.
+        float rightTail = RIGHT_TAIL_CANDLES * mPointWidth;
+        int contentWidth = (int) Math.max((mDataLen + rightTail - (mWidth - configManager.paddingRight) / mScaleX), 0);
         return Math.max(contentWidth, 0);
     }
 

@@ -143,9 +143,17 @@ class HTKLineContainerView: UIView {
                         } else if wasAtEnd {
                             let maxOffsetX = max(0, self.klineView.contentSize.width - self.klineView.bounds.size.width)
                             self.klineView.setContentOffset(CGPoint(x: maxOffsetX, y: 0), animated: false)
-                        } else if previousCount == 0 && newCount > 0 && self.configManager.shouldScrollToEnd && self.klineView.bounds.size.width > 0 {
-                            let maxOffsetX = max(0, self.klineView.contentSize.width - self.klineView.bounds.size.width)
-                            self.klineView.setContentOffset(CGPoint(x: maxOffsetX, y: 0), animated: false)
+                        } else if previousCount == 0 && newCount > 0 && self.configManager.shouldScrollToEnd {
+                            // Initial data load: pin to the newest candle. If the view doesn't have a
+                            // real width yet, defer to layoutSubviews so the first render still lands
+                            // on the latest candle (fixes intermittent "shows older candle" on iOS).
+                            if self.klineView.bounds.size.width > 0 {
+                                let maxOffsetX = max(0, self.klineView.contentSize.width - self.klineView.bounds.size.width)
+                                self.klineView.setContentOffset(CGPoint(x: maxOffsetX, y: 0), animated: false)
+                                self.klineView.markInitialScrollToEndApplied()
+                            } else {
+                                self.klineView.requestInitialScrollToEnd()
+                            }
                         }
                         // Don't reset loadingMoreFromLeft for live ticks —
                         // the flag stays active until the actual prepend arrives.
