@@ -171,6 +171,10 @@ class HTKLineConfigManager: NSObject {
 
     var paddingRight: CGFloat = 0
 
+    // Empty space (in candle widths) kept to the right of the newest candle when scrolled to the
+    // end, so the latest candle isn't glued to the price axis. Configurable from JS.
+    var rightPaddingCandles: CGFloat = 3
+
     var paddingBottom: CGFloat = 0
 
     var mainFlex: CGFloat = 0
@@ -541,6 +545,7 @@ class HTKLineConfigManager: NSObject {
         reloadScrollViewScale(1)
         paddingTop = configList["paddingTop"] as? CGFloat ?? 0
         paddingRight = configList["paddingRight"] as? CGFloat ?? 0
+        rightPaddingCandles = configList["rightPaddingCandles"] as? CGFloat ?? 3
         paddingBottom = configList["paddingBottom"] as? CGFloat ?? 0
         mainFlex = configList["mainFlex"] as? CGFloat ?? 0
         volumeFlex = configList["volumeFlex"] as? CGFloat ?? 0

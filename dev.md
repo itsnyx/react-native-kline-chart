@@ -326,6 +326,7 @@ const optionList = {
     macdCandleWidth: 3,
     paddingTop: 10,
     paddingRight: 60,         // Right padding (space for price labels)
+    rightPaddingCandles: 3,   // Empty space (in candle widths) kept right of the newest candle when scrolled to the end
     paddingBottom: 0,
     mainFlex: 0.6,            // Fraction of chart height for main area
     volumeFlex: 0.15,         // Fraction of chart height for volume area

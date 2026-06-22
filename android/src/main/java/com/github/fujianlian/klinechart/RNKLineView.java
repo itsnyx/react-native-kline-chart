@@ -143,8 +143,11 @@ public class RNKLineView extends SimpleViewManager<HTKLineContainerView> {
                     public void run() {
                         // Atomically assign data + adjust scroll on the UI thread.
                         int oldScrollOffset = containerView.klineView.getScrollOffset();
-                        int oldMaxScrollX = containerView.klineView.getMaxScrollX();
-                        boolean wasAtEnd = oldScrollOffset >= oldMaxScrollX;
+                        // "At end" is measured against the resting flush position (newest candle
+                        // against the axis), not the padded max — so live ticks keep following
+                        // whether or not the user has scrolled into the right padding.
+                        int oldEndScrollX = containerView.klineView.getEndScrollX();
+                        boolean wasAtEnd = oldScrollOffset >= oldEndScrollX;
 
                         // Detect prepend by finding where the current first candle
                         // appears in the new data. This is robust against intermediate
@@ -213,7 +216,7 @@ public class RNKLineView extends SimpleViewManager<HTKLineContainerView> {
                         } else {
                             containerView.klineView.notifyChanged();
                             if (wasAtEnd) {
-                                containerView.klineView.setScrollX(containerView.klineView.getMaxScrollX());
+                                containerView.klineView.setScrollX(containerView.klineView.getEndScrollX());
                             }
                             if (dataReplaced) {
                                 // Data replaced entirely (e.g. timeframe switch) — clear the

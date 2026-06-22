@@ -239,7 +239,11 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
             childDraw = wrDraw
         }
 
-        let isEnd = contentOffset.x + 1 + bounds.size.width >= contentSize.width
+        // "At end" is measured against the resting flush position (newest candle against the
+        // axis), not the padded content end — so the chart follows whether or not the user has
+        // scrolled into the right padding.
+        let oldFlushEnd = max(0, contentSize.width - rightTailPadding - bounds.size.width)
+        let isEnd = contentOffset.x + 1 >= oldFlushEnd
         reloadContentSize()
 
         // Reset deferral marker when JS asks for "keep at end".
@@ -250,7 +254,7 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
         if (configManager.shouldScrollToEnd || isEnd) {
             // If layout hasn't happened yet (width == 0), defer to layoutSubviews().
             if bounds.size.width > 0 {
-                let toEndContentOffset = contentSize.width - bounds.size.width
+                let toEndContentOffset = endContentOffsetX
                 let distance = abs(contentOffset.x - toEndContentOffset)
                 let animated = distance <= configManager.itemWidth
                 scrollToEndIfPossible(animated: animated)
@@ -328,14 +332,20 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
         }
     }
 
-    // Empty space kept to the right of the newest candle when scrolled to the end, so the
-    // latest candle isn't glued to the price axis. ~3 candle widths.
-    private var rightTailPadding: CGFloat { configManager.itemWidth * 3 }
+    // Extra scrollable space to the right of the newest candle. This space is reachable by
+    // scrolling but is NOT shown at rest. `rightPaddingCandles` candle widths (configurable from JS).
+    var rightTailPadding: CGFloat { configManager.itemWidth * configManager.rightPaddingCandles }
+
+    /// The resting "end" content offset: the newest candle sits flush against the right price
+    /// axis with NO right padding visible. Used for the initial scroll-to-end and live-follow,
+    /// so the chart always opens on the latest candle without empty space. The user can still
+    /// scroll further right (up to `contentSize.width - bounds.width`) to reveal the padding.
+    var endContentOffsetX: CGFloat { max(0, contentSize.width - rightTailPadding - bounds.size.width) }
 
     func reloadContentSize() {
         configManager.reloadScrollViewScale(scale)
         // Content width is determined by candle count plus the configured right padding and a
-        // small tail of ~3 candle widths so the newest candle keeps some breathing room.
+        // tail of `rightPaddingCandles` candle widths so the newest candle keeps some breathing room.
         let contentWidth = configManager.itemWidth * CGFloat(configManager.modelArray.count) + configManager.paddingRight + rightTailPadding
         contentSize = CGSize(width: contentWidth, height: frame.size.height)
     }
@@ -675,9 +685,10 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
 
     private func scrollToEndIfPossible(animated: Bool) {
         guard bounds.size.width > 0 else { return }
-        let maxOffsetX = max(0, contentSize.width - bounds.size.width)
+        // Rest at the flush end (newest candle against the axis), not the padded max.
+        let endOffsetX = endContentOffsetX
         didApplyInitialScrollToEnd = true
-        setContentOffset(CGPoint(x: maxOffsetX, y: 0), animated: animated)
+        setContentOffset(CGPoint(x: endOffsetX, y: 0), animated: animated)
         scrollViewDidScroll(self)
     }
 

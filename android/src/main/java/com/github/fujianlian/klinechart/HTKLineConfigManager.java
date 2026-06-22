@@ -152,6 +152,10 @@ public class HTKLineConfigManager {
 
     public float paddingRight = 0;
 
+    // Empty space (in candle widths) kept to the right of the newest candle when scrolled to the
+    // end, so the latest candle isn't glued to the price axis. Configurable from JS.
+    public float rightPaddingCandles = 3;
+
     public float itemWidth = 9;
 
     public float candleWidth = 7;
@@ -492,6 +496,7 @@ public class HTKLineConfigManager {
         
         this.minuteLineColor = ((Number) configList.get("minuteLineColor")).intValue();
         this.paddingRight = ((Number)configList.get("paddingRight")).floatValue();
+        this.rightPaddingCandles = ((Number)this.getOrDefault(configList, "rightPaddingCandles", 3.0)).floatValue();
         this.paddingTop = ((Number)configList.get("paddingTop")).floatValue();
         this.paddingBottom = ((Number)configList.get("paddingBottom")).floatValue();
         this.itemWidth = ((Number)configList.get("itemWidth")).floatValue();

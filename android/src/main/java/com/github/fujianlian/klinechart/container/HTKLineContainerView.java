@@ -93,7 +93,7 @@ public class HTKLineContainerView extends RelativeLayout {
         klineView.setMTextSize(klineView.configManager.candleTextFontSize);
         klineView.setMTextColor(klineView.configManager.candleTextColor);
         klineView.reloadColor();
-        Boolean isEnd = klineView.getScrollOffset() >= klineView.getMaxScrollX();
+        Boolean isEnd = klineView.getScrollOffset() >= klineView.getEndScrollX();
         if (configManager.suppressScrollToEndOnce) {
             // A prepend of older candles just anchored the scroll position and started
             // an animated rescale in setModelArray. Use the animated notify so this
@@ -104,7 +104,7 @@ public class HTKLineContainerView extends RelativeLayout {
         } else {
             klineView.notifyChanged();
             if (isEnd || klineView.configManager.shouldScrollToEnd) {
-                klineView.setScrollX(klineView.getMaxScrollX());
+                klineView.setScrollX(klineView.getEndScrollX());
             }
         }
 

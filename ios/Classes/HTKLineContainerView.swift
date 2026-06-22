@@ -102,8 +102,11 @@ class HTKLineContainerView: UIView {
                         // Capture scroll state before updating content size
                         let oldContentOffsetX = self.klineView.contentOffset.x
                         let oldContentSizeWidth = self.klineView.contentSize.width
-                        let oldMaxOffsetX = max(0, oldContentSizeWidth - self.klineView.bounds.size.width)
-                        let wasAtEnd = oldContentOffsetX >= oldMaxOffsetX - 1
+                        // "At end" is measured against the resting flush position (newest candle
+                        // against the axis), not the padded max — so live ticks keep following
+                        // whether or not the user has scrolled into the right padding.
+                        let oldFlushEnd = max(0, oldContentSizeWidth - self.klineView.rightTailPadding - self.klineView.bounds.size.width)
+                        let wasAtEnd = oldContentOffsetX >= oldFlushEnd - 1
 
                         let newCount = self.configManager.modelArray.count
                         let addedCount = max(newCount - previousCount, 0)
@@ -138,18 +141,15 @@ class HTKLineContainerView: UIView {
                         } else if dataReplaced {
                             // Data replaced entirely (e.g. timeframe switch) — reset flag
                             self.configManager.loadingMoreFromLeft = false
-                            let maxOffsetX = max(0, self.klineView.contentSize.width - self.klineView.bounds.size.width)
-                            self.klineView.setContentOffset(CGPoint(x: maxOffsetX, y: 0), animated: false)
+                            self.klineView.setContentOffset(CGPoint(x: self.klineView.endContentOffsetX, y: 0), animated: false)
                         } else if wasAtEnd {
-                            let maxOffsetX = max(0, self.klineView.contentSize.width - self.klineView.bounds.size.width)
-                            self.klineView.setContentOffset(CGPoint(x: maxOffsetX, y: 0), animated: false)
+                            self.klineView.setContentOffset(CGPoint(x: self.klineView.endContentOffsetX, y: 0), animated: false)
                         } else if previousCount == 0 && newCount > 0 && self.configManager.shouldScrollToEnd {
                             // Initial data load: pin to the newest candle. If the view doesn't have a
                             // real width yet, defer to layoutSubviews so the first render still lands
                             // on the latest candle (fixes intermittent "shows older candle" on iOS).
                             if self.klineView.bounds.size.width > 0 {
-                                let maxOffsetX = max(0, self.klineView.contentSize.width - self.klineView.bounds.size.width)
-                                self.klineView.setContentOffset(CGPoint(x: maxOffsetX, y: 0), animated: false)
+                                self.klineView.setContentOffset(CGPoint(x: self.klineView.endContentOffsetX, y: 0), animated: false)
                                 self.klineView.markInitialScrollToEndApplied()
                             } else {
                                 self.klineView.requestInitialScrollToEnd()

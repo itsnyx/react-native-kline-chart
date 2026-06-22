@@ -1246,7 +1246,7 @@ public abstract class BaseKLineChartView extends ScrollAndScaleView implements D
             mScrollToEndAnimator.cancel();
         }
         int startX = getScrollOffset();
-        int endX = getMaxScrollX();
+        int endX = getEndScrollX();
         if (startX == endX) return;
 
         mScrollToEndAnimator = ValueAnimator.ofInt(startX, endX);
@@ -1710,15 +1710,23 @@ public abstract class BaseKLineChartView extends ScrollAndScaleView implements D
         return (int) -(mWidth * 0.5f / mScaleX);
     }
 
-    // Empty space (in scroll-space units) kept to the right of the newest candle when scrolled
-    // to the end, so the latest candle isn't glued to the price axis. ~3 candle widths.
-    private static final float RIGHT_TAIL_CANDLES = 3f;
-
     public int getMaxScrollX() {
-        // Max scroll is based on data length, the configured right padding, and a small tail of
-        // ~3 candle widths so the newest candle keeps some breathing room from the right edge.
-        float rightTail = RIGHT_TAIL_CANDLES * mPointWidth;
+        // The maximum the user can scroll: data length plus a tail of `rightPaddingCandles`
+        // candle widths (configurable from JS). This extra space is reachable by scrolling but
+        // is NOT shown at rest — see getEndScrollX() for the resting "end" position.
+        float rightTail = configManager.rightPaddingCandles * mPointWidth;
         int contentWidth = (int) Math.max((mDataLen + rightTail - (mWidth - configManager.paddingRight) / mScaleX), 0);
+        return Math.max(contentWidth, 0);
+    }
+
+    /**
+     * The resting "end" scroll position: the newest candle sits flush against the right price
+     * axis with NO right padding visible. Used for the initial scroll-to-end and live-follow,
+     * so the chart always opens on the latest candle without empty space. The user can still
+     * scroll further right (up to getMaxScrollX) to reveal the padding.
+     */
+    public int getEndScrollX() {
+        int contentWidth = (int) Math.max((mDataLen - (mWidth - configManager.paddingRight) / mScaleX), 0);
         return Math.max(contentWidth, 0);
     }
 
