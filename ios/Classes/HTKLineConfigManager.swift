@@ -269,6 +269,11 @@ class HTKLineConfigManager: NSObject {
     // hover. Controlled from JS via optionList.configList.hapticOnSelection (default: false).
     var hapticOnSelection: Bool = false
 
+    // Whether the long-press hover info overlay (crosshair + candle/price panel) is enabled.
+    // When false, long-pressing the chart does nothing and normal scrolling is preserved.
+    // Controlled from JS via optionList.configList.hoverInfoEnabled (default: true).
+    var hoverInfoEnabled: Bool = true
+
     // The day a week starts on, used as a fallback when computing the weekly candle close time
     // and no candle open is available to anchor on. 0=Sunday … 6=Saturday. Default: Monday (1),
     // matching Bitget's UTC weekly alignment. Set from JS via optionList.configList.weekStartDay.
@@ -589,6 +594,7 @@ class HTKLineConfigManager: NSObject {
         candleIntervalMs = (configList["candleIntervalMs"] as? NSNumber)?.doubleValue ?? 0
         weekStartDay = (configList["weekStartDay"] as? NSNumber)?.intValue ?? 1
         hapticOnSelection = configList["hapticOnSelection"] as? Bool ?? false
+        hoverInfoEnabled = configList["hoverInfoEnabled"] as? Bool ?? true
     }
 
 }

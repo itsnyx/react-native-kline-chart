@@ -127,6 +127,11 @@ public class HTKLineConfigManager {
     // hover. Controlled from JS via optionList.configList.hapticOnSelection (default: false).
     public boolean hapticOnSelection = false;
 
+    // Whether the long-press hover info overlay (crosshair + candle/price panel) is enabled.
+    // When false, long-pressing the chart does nothing and normal scrolling is preserved.
+    // Controlled from JS via optionList.configList.hoverInfoEnabled (default: true).
+    public boolean hoverInfoEnabled = true;
+
 
 	public PrimaryStatus primaryStatus = PrimaryStatus.MA;
 
@@ -586,6 +591,15 @@ public class HTKLineConfigManager {
             this.drawingsEditable = ((Number) drawingsEditableObj).intValue() != 0;
         } else {
             this.drawingsEditable = true;
+        }
+
+        Object hoverInfoEnabledObj = configList.get("hoverInfoEnabled");
+        if (hoverInfoEnabledObj instanceof Boolean) {
+            this.hoverInfoEnabled = (Boolean) hoverInfoEnabledObj;
+        } else if (hoverInfoEnabledObj instanceof Number) {
+            this.hoverInfoEnabled = ((Number) hoverInfoEnabledObj).intValue() != 0;
+        } else {
+            this.hoverInfoEnabled = true;
         }
 
 

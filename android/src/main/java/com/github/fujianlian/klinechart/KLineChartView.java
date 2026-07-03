@@ -528,6 +528,10 @@ public class KLineChartView extends BaseKLineChartView {
 
     @Override
     public void onLongPress(MotionEvent e) {
+        // Hover info overlay disabled from JS: ignore long-press so normal scrolling is preserved.
+        if (configManager != null && !configManager.hoverInfoEnabled) {
+            return;
+        }
         if (!isRefreshing) {
             super.onLongPress(e);
         }

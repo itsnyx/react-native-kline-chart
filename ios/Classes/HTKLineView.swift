@@ -218,6 +218,19 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
 
     func reloadConfigManager(_ configManager: HTKLineConfigManager) {
 
+        // Enable/disable the long-press hover overlay. Disabling the recognizer (rather than just
+        // ignoring it in the handler) is important: `panGestureRecognizer.require(toFail:)` on the
+        // scroll views would otherwise let a recognized long-press block normal scrolling.
+        longPressGesture.isEnabled = configManager.hoverInfoEnabled
+        if !configManager.hoverInfoEnabled, selectedIndex != -1 {
+            // Clear any active hover selection so a stale overlay doesn't linger after disabling.
+            selectedIndex = -1
+            selectedY = .nan
+            selectedPricePillRect = .zero
+            selectedPriceValue = .nan
+            exitHoverModeIfNeeded()
+        }
+
         let childType = configManager.childType
         let showVolume = configManager.showVolume
         if childType != lastRenderedChildType || showVolume != lastRenderedShowVolume {
@@ -1713,6 +1726,10 @@ extension HTKLineView: UIScrollViewDelegate {
 
     @objc
     func longPressSelector(_ gesture: UILongPressGestureRecognizer) {
+        // Hover info overlay disabled from JS: ignore long-press so normal scrolling is preserved.
+        guard configManager.hoverInfoEnabled else {
+            return
+        }
         // Use location in the superview (or window) to get coordinates relative to the visible
         // viewport, then manually add contentOffset to convert to content coordinates.
         // NOTE: In a UIScrollView, `location(in: self)` returns coordinates in the scroll view's
