@@ -38,6 +38,12 @@ public class HTKLineTargetItem {
 
     public static ArrayList<HTKLineTargetItem> packModelArray(List<Map> valueList) {
         ArrayList<HTKLineTargetItem> modelArray = new ArrayList();
+        // JS may omit an indicator's list (e.g. maList/rsiList/wrList/maVolumeList)
+        // from the targetList payload, in which case the caller passes null here.
+        // Iterating null crashes with "List.iterator() on a null object reference".
+        if (valueList == null) {
+            return modelArray;
+        }
         for (Object object: valueList) {
             HTKLineTargetItem item = new HTKLineTargetItem((Map) object);
             if (item.selected) {

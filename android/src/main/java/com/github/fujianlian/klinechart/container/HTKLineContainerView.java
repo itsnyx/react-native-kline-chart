@@ -79,13 +79,19 @@ public class HTKLineContainerView extends RelativeLayout {
     }
 
     public void reloadConfigManager() {
+        // reloadConfigManager is posted to the UI thread from a background parse in
+        // setOptionList. By the time it runs the view may have been detached/dropped,
+        // or the config may be partially populated — guard against NPEs.
+        if (klineView == null || klineView.configManager == null) {
+            return;
+        }
         klineView.changeMainDrawType(klineView.configManager.primaryStatus);
         klineView.changeSecondDrawType(klineView.configManager.secondStatus);
         klineView.setMainDrawLine(klineView.configManager.isMinute);
         klineView.setPointWidth(klineView.configManager.itemWidth);
         klineView.setCandleWidth(klineView.configManager.candleWidth);
 
-        if (klineView.configManager.fontFamily.length() > 0) {
+        if (klineView.configManager.fontFamily != null && klineView.configManager.fontFamily.length() > 0) {
             klineView.setTextFontFamily(klineView.configManager.fontFamily);
         }
         klineView.setTextColor(klineView.configManager.textColor);

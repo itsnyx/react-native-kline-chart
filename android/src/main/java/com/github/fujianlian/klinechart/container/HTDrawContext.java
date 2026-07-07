@@ -61,7 +61,11 @@ public class HTDrawContext {
         }
         switch (state) {
             case MotionEvent.ACTION_DOWN: {
-                if (configManager.drawingsEditable && configManager.shouldReloadDrawItemIndex > HTDrawState.showContext) {
+                if (configManager.drawingsEditable && configManager.shouldReloadDrawItemIndex > HTDrawState.showContext
+                        && configManager.shouldReloadDrawItemIndex < drawItemList.size()) {
+                    // Upper-bound guard: shouldReloadDrawItemIndex can be stale after a
+                    // drawing is removed, so it may point past the end of drawItemList,
+                    // which would throw IndexOutOfBoundsException.
                     HTDrawItem selectedDrawItem = drawItemList.get(configManager.shouldReloadDrawItemIndex);
                     if (selectedDrawItem.pointList.size() >= selectedDrawItem.drawType.count()) {
                         if (HTDrawItem.canResponseLocation(drawItemList, location, klineView) != selectedDrawItem) {

@@ -355,7 +355,7 @@ public abstract class BaseKLineChartView extends ScrollAndScaleView implements D
         super.onDraw(canvas);
 //        canvas.drawColor(mBackgroundPaint.getColor());
 
-        if (mWidth == 0 || mMainRect.height() == 0) {
+        if (mWidth == 0 || mMainRect == null || mMainRect.height() == 0) {
             return;
         }
         calculateValue();
@@ -1473,6 +1473,9 @@ public abstract class BaseKLineChartView extends ScrollAndScaleView implements D
     }
 
     private void notifyChangedInternal(boolean snapScale) {
+        if (configManager == null || configManager.modelArray == null) {
+            return;
+        }
         mItemCount = configManager.modelArray.size();
         mDataLen = mItemCount * mPointWidth;
         if (isShowChild && mChildDrawPosition == -1) {

@@ -507,7 +507,8 @@ public class HTKLineConfigManager {
         this.itemWidth = ((Number)configList.get("itemWidth")).floatValue();
         this.candleWidth = ((Number)configList.get("candleWidth")).floatValue();
 
-        this.fontFamily = (configList.get("fontFamily")).toString();
+        Object fontFamilyValue = configList.get("fontFamily");
+        this.fontFamily = fontFamilyValue != null ? fontFamilyValue.toString() : "";
         this.textColor = ((Number) configList.get("textColor")).intValue();
         this.headerTextFontSize = ((Number)configList.get("headerTextFontSize")).floatValue();
         this.rightTextFontSize = ((Number)configList.get("rightTextFontSize")).floatValue();
