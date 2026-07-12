@@ -429,26 +429,62 @@ public abstract class BaseKLineChartView extends ScrollAndScaleView implements D
         mBackgroundPaint.setAlpha(oldAlpha);
     }
 
+    // Native N2: coordinate helpers. Percentage view is an affine relabel of the
+    // linear axis, so it does not change the mapping (only the label text). Only
+    // "log" and inverted change value↔pixel. Everything is guarded so bad input
+    // degrades to the linear mapping rather than blanking the chart.
+    private boolean isLogCoordinate() {
+        return configManager != null && "log".equals(configManager.coordinateType)
+                && mMainMaxValue > 0 && mMainMinValue > 0;
+    }
+
+    private boolean isInvertedCoordinate() {
+        return configManager != null && configManager.invertedView;
+    }
+
     public float yFromValue(float value) {
         if (mItemCount <= 0) {
             return value;
         }
-    	float distance = (mMainMaxValue - value) * mMainScaleY;
-    	if (mMainMaxValue == mMainMinValue && value == mMainMinValue) {
-    		distance = mMainRect.height() * 0.5f;
-    	}
-        return distance + mMainRect.top;
+        float h = mMainRect.height();
+        if (mMainMaxValue == mMainMinValue) {
+            return mMainRect.top + h * 0.5f;
+        }
+        float frac; // 0 at the top of the main rect, 1 at the bottom.
+        if (isLogCoordinate() && value > 0) {
+            double lmax = Math.log10(mMainMaxValue);
+            double lmin = Math.log10(mMainMinValue);
+            double lv = Math.log10(value);
+            double denom = lmax - lmin;
+            frac = denom == 0 ? 0.5f : (float) ((lmax - lv) / denom);
+        } else {
+            frac = (mMainMaxValue - value) / (mMainMaxValue - mMainMinValue);
+        }
+        if (isInvertedCoordinate()) {
+            frac = 1f - frac;
+        }
+        return mMainRect.top + frac * h;
     }
 
     public float valueFromY(float y) {
         if (mItemCount <= 0) {
             return y;
         }
-        float value = mMainMaxValue - ((y - mMainRect.top) / mMainScaleY);
-        if (mMainMaxValue == mMainMinValue && value == mMainMinValue) {
-            value = mMainMinValue;
+        float h = mMainRect.height();
+        if (mMainMaxValue == mMainMinValue || h == 0) {
+            return mMainMinValue;
         }
-        return value;
+        float frac = (y - mMainRect.top) / h;
+        if (isInvertedCoordinate()) {
+            frac = 1f - frac;
+        }
+        if (isLogCoordinate()) {
+            double lmax = Math.log10(mMainMaxValue);
+            double lmin = Math.log10(mMainMinValue);
+            double lv = lmax - frac * (lmax - lmin);
+            return (float) Math.pow(10, lv);
+        }
+        return mMainMaxValue - frac * (mMainMaxValue - mMainMinValue);
     }
 
     public float xFromValue(float value) {
@@ -943,13 +979,29 @@ public abstract class BaseKLineChartView extends ScrollAndScaleView implements D
         if (mMainDraw != null) {
 //            canvas.drawText(formatValue(mMainMaxValue), mWidth - calculateWidth(formatValue(mMainMaxValue)), baseLine + mMainRect.top, mTextPaint);
 //            canvas.drawText(formatValue(mMainMinValue), mWidth - calculateWidth(formatValue(mMainMinValue)), mMainRect.bottom - textHeight + baseLine, mTextPaint);
-            float rowValue = (mMainMaxValue - mMainMinValue) / mGridRows;
             float rowSpace = mMainRect.height() / mGridRows;
+            // Native N2: derive each label's price from its pixel via valueFromY so
+            // the labels follow the active coordinate mapping (log / inverted).
+            boolean pct = configManager != null && "percentage".equals(configManager.coordinateType);
+            float pctBase = 0f;
+            if (pct) {
+                KLineEntity first = mItemCount > 0 ? getItem(0) : null;
+                pctBase = first != null ? first.getOpenPrice() : 0f;
+                if (pctBase == 0 && configManager != null) {
+                    pctBase = configManager.percentageBase;
+                }
+            }
             for (int i = 0; i < mGridRows + 1; i++) {
-                String text = safeText(formatValue(rowValue * (mGridRows - i) + mMainMinValue));
                 float y = rowSpace * i + mMainRect.top;
-                y = fixTextY1(y);
-                canvas.drawText(text, mWidth - calculateWidth(text), y, mTextPaint);
+                float price = valueFromY(y);
+                String text;
+                if (pct && pctBase != 0) {
+                    text = safeText(String.format("%.2f%%", (price / pctBase - 1f) * 100f));
+                } else {
+                    text = safeText(formatValue(price));
+                }
+                float ty = fixTextY1(y);
+                canvas.drawText(text, mWidth - calculateWidth(text), ty, mTextPaint);
             }
         }
         //--------------画中间子图的值-------------

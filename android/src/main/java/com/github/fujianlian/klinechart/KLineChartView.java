@@ -41,6 +41,7 @@ public class KLineChartView extends BaseKLineChartView {
     private KDJDraw mKDJDraw;
     private WRDraw mWRDraw;
     private VolumeDraw mVolumeDraw;
+    private GenericOscillatorDraw mGenericDraw;
 
     public KLineChartView(Context context, HTKLineConfigManager configManager) {
         super(context, configManager);
@@ -73,6 +74,10 @@ public class KLineChartView extends BaseKLineChartView {
                 setChildDraw(3);
                 break;
             }
+            case GENERIC: {
+                setChildDraw(4);
+                break;
+            }
             case NONE: {
                 hideChildDraw();
                 break;
@@ -91,11 +96,13 @@ public class KLineChartView extends BaseKLineChartView {
         mWRDraw = new WRDraw(this);
         mKDJDraw = new KDJDraw(this);
         mRSIDraw = new RSIDraw(this);
+        mGenericDraw = new GenericOscillatorDraw(this);
         mMainDraw = new MainDraw(this);
         addChildDraw(mMACDDraw);
         addChildDraw(mKDJDraw);
         addChildDraw(mRSIDraw);
         addChildDraw(mWRDraw);
+        addChildDraw(mGenericDraw);
         setVolDraw(mVolumeDraw);
         setMainDraw(mMainDraw);
     }
@@ -458,6 +465,7 @@ public class KLineChartView extends BaseKLineChartView {
         mKDJDraw.setTextSize(textSize);
         mWRDraw.setTextSize(textSize);
         mVolumeDraw.setTextSize(textSize);
+        mGenericDraw.setTextSize(textSize);
     }
 
     public void setTextFontFamily(String fontFamily) {
@@ -468,6 +476,7 @@ public class KLineChartView extends BaseKLineChartView {
         mKDJDraw.setTextFontFamily(fontFamily);
         mWRDraw.setTextFontFamily(fontFamily);
         mVolumeDraw.setTextFontFamily(fontFamily);
+        mGenericDraw.setTextFontFamily(fontFamily);
     }
 
     @Override
@@ -479,6 +488,7 @@ public class KLineChartView extends BaseKLineChartView {
         mKDJDraw.setLineWidth(lineWidth);
         mWRDraw.setLineWidth(lineWidth);
         mVolumeDraw.setLineWidth(lineWidth);
+        mGenericDraw.setLineWidth(lineWidth);
     }
 
     @Override

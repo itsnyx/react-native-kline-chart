@@ -184,6 +184,26 @@ public class KLineEntity implements IKLine {
     public List<HTKLineTargetItem> rsiList = new ArrayList();
     public List<HTKLineTargetItem> wrList = new ArrayList();
 
+    // Native N4: generic sub-chart oscillator lines (ROC/CCI/OBV/StochRSI/MFI/
+    // DMI/DMA/MTM/EMV). Each item is {value,title}; drawn by GenericOscillatorDraw.
+    public List<HTKLineTargetItem> subLines = new ArrayList();
+
+    // Phase 8-B main-chart overlays. Values default to NaN so draw code can skip
+    // a candle that has no computed value (missing field, warm-up period, etc.).
+    public List<HTKLineTargetItem> emaList = new ArrayList();
+    public float sar = Float.NaN;
+    public float avl = Float.NaN;
+    public float vwap = Float.NaN;
+    public float superTrend = Float.NaN;
+    public boolean superTrendUp = true;
+
+    // Native N3: Ichimoku Cloud lines. NaN = no value for this candle.
+    public float ichiTenkan = Float.NaN;
+    public float ichiKijun = Float.NaN;
+    public float ichiSpanA = Float.NaN;
+    public float ichiSpanB = Float.NaN;
+    public float ichiChikou = Float.NaN;
+
 
     public float targetListISMax(List<HTKLineTargetItem> itemList, boolean isMax) {
         float max = Float.MIN_VALUE;

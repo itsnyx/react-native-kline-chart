@@ -30,6 +30,9 @@ enum HTKLineChildType: Int {
 
     case wr = 6
 
+    // Native N4: any of the additional oscillators, rendered generically.
+    case generic = 100
+
 }
 
 enum HTKLineDrawType: Int {
@@ -120,9 +123,16 @@ class HTKLineConfigManager: NSObject {
 
     var childType: HTKLineChildType {
         get {
+            // Native N4: codes >= 100 are the additional oscillators.
+            if second >= 100 {
+                return .generic
+            }
             return HTKLineChildType(rawValue: second) ?? HTKLineChildType.none
         }
     }
+
+    // Native N4: legend label for the generic sub oscillator (e.g. "ROC").
+    var secondLabel = ""
 
 
 
@@ -192,6 +202,19 @@ class HTKLineConfigManager: NSObject {
     var minuteVolumeCandleColor = UIColor.blue
 
     var targetColorList = [UIColor]()
+
+    // Phase 8-B: extra main-chart overlays to draw (ids among "ema", "avl",
+    // "vwap", "super", "sar"). Never nil so draw code can call .contains().
+    var mainOverlays = [String]()
+
+    // Native N1: candle body style — allSolid | allHollow | upHollow |
+    // downHollow | ohlc. Defaults to solid so behavior is unchanged when absent.
+    var candleStyle = "allSolid"
+
+    // Native N2: coordinate type (linear | percentage | log) + inverted y-axis.
+    var coordinateType = "linear"
+    var invertedView = false
+    var percentageBase: CGFloat = 0
 
     var minuteGradientColorList = [UIColor]()
 
@@ -539,6 +562,7 @@ class HTKLineConfigManager: NSObject {
         }
         primary = optionList["primary"] as? Int ?? -1
         second = optionList["second"] as? Int ?? -1
+        secondLabel = optionList["secondLabel"] as? String ?? ""
         time = optionList["time"] as? Int ?? -1
         price = optionList["price"] as? Int ?? -1
         volume = optionList["volume"] as? Int ?? -1
@@ -560,6 +584,14 @@ class HTKLineConfigManager: NSObject {
         decreaseColor = RCTConvert.uiColor(colorList["decreaseColor"])
         minuteLineColor = RCTConvert.uiColor(configList["minuteLineColor"])
         targetColorList = type(of: self).packColorList(configList["targetColorList"])
+        // Phase 8-B: which extra main-chart overlays to draw.
+        mainOverlays = (configList["mainOverlays"] as? [String]) ?? [String]()
+        // Native N1: candle body style.
+        candleStyle = (configList["candleStyle"] as? String) ?? "allSolid"
+        // Native N2: coordinate type + inverted y-axis.
+        coordinateType = (configList["coordinateType"] as? String) ?? "linear"
+        invertedView = (configList["invertedView"] as? Bool) ?? false
+        percentageBase = (configList["percentageBase"] as? CGFloat) ?? 0
         minuteGradientColorList = type(of: self).packColorList(configList["minuteGradientColorList"])
         minuteGradientLocationList = configList["minuteGradientLocationList"] as? [CGFloat] ?? [CGFloat]()
         minuteVolumeCandleColor = RCTConvert.uiColor(configList["minuteVolumeCandleColor"])

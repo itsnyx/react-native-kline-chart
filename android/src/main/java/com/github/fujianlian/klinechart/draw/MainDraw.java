@@ -33,6 +33,9 @@ public class MainDraw implements IChartDraw<ICandle> {
     private Paint ma10Paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private Paint ma30Paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private Paint primaryPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    // Phase 8-B: paint for extra main-chart overlays (EMA/AVL/VWAP/SUPER/SAR).
+    private Paint overlayPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private float mSarRadius = 3f;
 
     private Paint minuteGradientPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
@@ -60,6 +63,10 @@ public class MainDraw implements IChartDraw<ICandle> {
         minuteGradientPaint.setStrokeJoin(Paint.Join.ROUND);
         minuteGradientPaint.setStrokeCap(Paint.Cap.ROUND);
         minuteGradientPaint.setStyle(Paint.Style.FILL);
+
+        overlayPaint.setStrokeJoin(Paint.Join.ROUND);
+        overlayPaint.setStrokeCap(Paint.Cap.ROUND);
+        overlayPaint.setStyle(Paint.Style.STROKE);
     }
 
     public void reloadColor(BaseKLineChartView view) {
@@ -167,6 +174,134 @@ public class MainDraw implements IChartDraw<ICandle> {
             }
         }
 
+        // Phase 8-B: draw any additional selected main-chart overlays on top.
+        drawMainOverlays(lastPoint, curPoint, lastX, curX, canvas, view);
+    }
+
+    private static boolean isFinite(float v) {
+        return !Float.isNaN(v) && !Float.isInfinite(v);
+    }
+
+    /** Color from the shared indicator palette, wrapping the index safely. */
+    private int overlayColor(BaseKLineChartView view, int index) {
+        int[] colors = view.configManager.targetColorList;
+        if (colors == null || colors.length == 0) {
+            return Color.GRAY;
+        }
+        int i = ((index % colors.length) + colors.length) % colors.length;
+        return colors[i];
+    }
+
+    /** Draws a single overlay line segment, skipping non-finite endpoints. */
+    private void drawOverlayLine(BaseKLineChartView view, Canvas canvas, int color, float lastX, float lastVal, float curX, float curVal) {
+        if (!isFinite(lastVal) || !isFinite(curVal)) {
+            return;
+        }
+        overlayPaint.setStyle(Paint.Style.STROKE);
+        overlayPaint.setColor(color);
+        view.drawMainLine(canvas, overlayPaint, lastX, lastVal, curX, curVal);
+    }
+
+    /**
+     * Draws the Phase 8-B overlays (EMA lines, AVL/VWAP lines, Supertrend line
+     * colored by direction, SAR dots). Every access is guarded so a candle that
+     * is missing a value (warm-up period, absent field) is silently skipped.
+     */
+    private void drawMainOverlays(@Nullable ICandle lastPoint, @NonNull ICandle curPoint, float lastX, float curX, @NonNull Canvas canvas, @NonNull BaseKLineChartView view) {
+        List<String> overlays = view.configManager.mainOverlays;
+        if (overlays == null || overlays.isEmpty()) {
+            return;
+        }
+        if (!(curPoint instanceof KLineEntity) || !(lastPoint instanceof KLineEntity)) {
+            return;
+        }
+        KLineEntity cur = (KLineEntity) curPoint;
+        KLineEntity last = (KLineEntity) lastPoint;
+
+        overlayPaint.setStyle(Paint.Style.STROKE);
+
+        // MA / BOLL as overlays so they can combine with the primary + others.
+        if (overlays.contains("ma") && cur.maList != null && last.maList != null) {
+            int n = Math.min(cur.maList.size(), last.maList.size());
+            for (int i = 0; i < n; i++) {
+                HTKLineTargetItem c = (HTKLineTargetItem) cur.maList.get(i);
+                HTKLineTargetItem l = (HTKLineTargetItem) last.maList.get(i);
+                if (c == null || l == null || !isFinite(c.value) || !isFinite(l.value)) {
+                    continue;
+                }
+                overlayPaint.setColor(overlayColor(view, i));
+                view.drawMainLine(canvas, overlayPaint, lastX, l.value, curX, c.value);
+            }
+        }
+        if (overlays.contains("boll")) {
+            if (isFinite(cur.getMb()) && isFinite(last.getMb()) && last.getMb() != 0) {
+                overlayPaint.setColor(overlayColor(view, 0));
+                view.drawMainLine(canvas, overlayPaint, lastX, last.getMb(), curX, cur.getMb());
+            }
+            if (isFinite(cur.getUp()) && isFinite(last.getUp()) && last.getUp() != 0) {
+                overlayPaint.setColor(overlayColor(view, 1));
+                view.drawMainLine(canvas, overlayPaint, lastX, last.getUp(), curX, cur.getUp());
+            }
+            if (isFinite(cur.getDn()) && isFinite(last.getDn()) && last.getDn() != 0) {
+                overlayPaint.setColor(overlayColor(view, 2));
+                view.drawMainLine(canvas, overlayPaint, lastX, last.getDn(), curX, cur.getDn());
+            }
+        }
+
+        // Ichimoku: per-segment cloud fill between Span A / Span B, then the lines.
+        if (overlays.contains("ichi")) {
+            if (isFinite(cur.ichiSpanA) && isFinite(last.ichiSpanA)
+                    && isFinite(cur.ichiSpanB) && isFinite(last.ichiSpanB)) {
+                boolean bullish = cur.ichiSpanA >= cur.ichiSpanB;
+                int cloud = bullish ? view.configManager.increaseColor : view.configManager.decreaseColor;
+                overlayPaint.setStyle(Paint.Style.FILL);
+                overlayPaint.setColor((cloud & 0x00FFFFFF) | 0x30000000); // ~19% alpha
+                android.graphics.Path path = new android.graphics.Path();
+                path.moveTo(lastX, view.yFromValue(last.ichiSpanA));
+                path.lineTo(curX, view.yFromValue(cur.ichiSpanA));
+                path.lineTo(curX, view.yFromValue(cur.ichiSpanB));
+                path.lineTo(lastX, view.yFromValue(last.ichiSpanB));
+                path.close();
+                canvas.drawPath(path, overlayPaint);
+                overlayPaint.setStyle(Paint.Style.STROKE);
+            }
+            drawOverlayLine(view, canvas, overlayColor(view, 0), lastX, last.ichiTenkan, curX, cur.ichiTenkan);
+            drawOverlayLine(view, canvas, overlayColor(view, 3), lastX, last.ichiKijun, curX, cur.ichiKijun);
+            drawOverlayLine(view, canvas, overlayColor(view, 4), lastX, last.ichiSpanA, curX, cur.ichiSpanA);
+            drawOverlayLine(view, canvas, overlayColor(view, 5), lastX, last.ichiSpanB, curX, cur.ichiSpanB);
+            drawOverlayLine(view, canvas, overlayColor(view, 1), lastX, last.ichiChikou, curX, cur.ichiChikou);
+        }
+
+        if (overlays.contains("ema") && cur.emaList != null && last.emaList != null) {
+            int n = Math.min(cur.emaList.size(), last.emaList.size());
+            for (int i = 0; i < n; i++) {
+                HTKLineTargetItem c = (HTKLineTargetItem) cur.emaList.get(i);
+                HTKLineTargetItem l = (HTKLineTargetItem) last.emaList.get(i);
+                if (c == null || l == null || !isFinite(c.value) || !isFinite(l.value)) {
+                    continue;
+                }
+                overlayPaint.setColor(overlayColor(view, i));
+                view.drawMainLine(canvas, overlayPaint, lastX, l.value, curX, c.value);
+            }
+        }
+        if (overlays.contains("avl") && isFinite(cur.avl) && isFinite(last.avl)) {
+            overlayPaint.setColor(overlayColor(view, 2));
+            view.drawMainLine(canvas, overlayPaint, lastX, last.avl, curX, cur.avl);
+        }
+        if (overlays.contains("vwap") && isFinite(cur.vwap) && isFinite(last.vwap)) {
+            overlayPaint.setColor(overlayColor(view, 1));
+            view.drawMainLine(canvas, overlayPaint, lastX, last.vwap, curX, cur.vwap);
+        }
+        if (overlays.contains("super") && isFinite(cur.superTrend) && isFinite(last.superTrend)) {
+            overlayPaint.setColor(cur.superTrendUp ? view.configManager.increaseColor : view.configManager.decreaseColor);
+            view.drawMainLine(canvas, overlayPaint, lastX, last.superTrend, curX, cur.superTrend);
+        }
+        if (overlays.contains("sar") && isFinite(cur.sar)) {
+            overlayPaint.setStyle(Paint.Style.FILL);
+            overlayPaint.setColor(overlayColor(view, 3));
+            canvas.drawCircle(curX, view.yFromValue(cur.sar), mSarRadius, overlayPaint);
+            overlayPaint.setStyle(Paint.Style.STROKE);
+        }
     }
 
     @Override
@@ -211,7 +346,56 @@ public class MainDraw implements IChartDraw<ICandle> {
                     canvas.drawText(text, x, y, primaryPaint);
                 }
             }
+
+            // Phase 8-B: append overlay legends (guarded; skips absent values).
+            x = drawOverlayLegend(point, view, canvas, x, y, space);
         }
+    }
+
+    /** Draws EMA/AVL/VWAP/SuperTrend/SAR header labels; returns the new x cursor. */
+    private float drawOverlayLegend(KLineEntity point, BaseKLineChartView view, Canvas canvas, float x, float y, String space) {
+        List<String> overlays = view.configManager.mainOverlays;
+        if (overlays == null || overlays.isEmpty() || point == null) {
+            return x;
+        }
+        String text;
+        if (overlays.contains("ema") && point.emaList != null) {
+            for (int i = 0; i < point.emaList.size(); i++) {
+                HTKLineTargetItem ti = (HTKLineTargetItem) point.emaList.get(i);
+                if (ti == null || !isFinite(ti.value)) {
+                    continue;
+                }
+                this.primaryPaint.setColor(overlayColor(view, i));
+                text = "EMA" + ti.title + ":" + view.formatValue(ti.value) + space;
+                canvas.drawText(text, x, y, this.primaryPaint);
+                x += this.primaryPaint.measureText(text);
+            }
+        }
+        if (overlays.contains("avl") && isFinite(point.avl)) {
+            this.primaryPaint.setColor(overlayColor(view, 2));
+            text = "AVL:" + view.formatValue(point.avl) + space;
+            canvas.drawText(text, x, y, this.primaryPaint);
+            x += this.primaryPaint.measureText(text);
+        }
+        if (overlays.contains("vwap") && isFinite(point.vwap)) {
+            this.primaryPaint.setColor(overlayColor(view, 1));
+            text = "VWAP:" + view.formatValue(point.vwap) + space;
+            canvas.drawText(text, x, y, this.primaryPaint);
+            x += this.primaryPaint.measureText(text);
+        }
+        if (overlays.contains("super") && isFinite(point.superTrend)) {
+            this.primaryPaint.setColor(point.superTrendUp ? view.configManager.increaseColor : view.configManager.decreaseColor);
+            text = "SuperTrend:" + view.formatValue(point.superTrend) + space;
+            canvas.drawText(text, x, y, this.primaryPaint);
+            x += this.primaryPaint.measureText(text);
+        }
+        if (overlays.contains("sar") && isFinite(point.sar)) {
+            this.primaryPaint.setColor(overlayColor(view, 3));
+            text = "SAR:" + view.formatValue(point.sar) + space;
+            canvas.drawText(text, x, y, this.primaryPaint);
+            x += this.primaryPaint.measureText(text);
+        }
+        return x;
     }
 
     public float findIsMaxValue(ICandle point, final boolean isMax) {
@@ -226,6 +410,48 @@ public class MainDraw implements IChartDraw<ICandle> {
             valueList.add(item.getMb());
             valueList.add(item.getUp());
             valueList.add(item.getDn());
+        }
+
+        // Phase 8-B: keep overlay lines within the visible price range. Only add
+        // finite values so a NaN never poisons the min/max computation.
+        List<String> overlays = kChartView != null ? kChartView.configManager.mainOverlays : null;
+        if (overlays != null && !overlays.isEmpty()) {
+            if (overlays.contains("ma") && item.maList != null && item.maList.size() > 0) {
+                float maExtreme = item.targetListISMax(item.maList, isMax);
+                if (isFinite(maExtreme)) {
+                    valueList.add(maExtreme);
+                }
+            }
+            if (overlays.contains("boll")) {
+                if (isFinite(item.getUp())) valueList.add(item.getUp());
+                if (isFinite(item.getMb())) valueList.add(item.getMb());
+                if (isFinite(item.getDn())) valueList.add(item.getDn());
+            }
+            if (overlays.contains("ichi")) {
+                if (isFinite(item.ichiTenkan)) valueList.add(item.ichiTenkan);
+                if (isFinite(item.ichiKijun)) valueList.add(item.ichiKijun);
+                if (isFinite(item.ichiSpanA)) valueList.add(item.ichiSpanA);
+                if (isFinite(item.ichiSpanB)) valueList.add(item.ichiSpanB);
+                if (isFinite(item.ichiChikou)) valueList.add(item.ichiChikou);
+            }
+            if (overlays.contains("ema") && item.emaList != null && item.emaList.size() > 0) {
+                float emaExtreme = item.targetListISMax(item.emaList, isMax);
+                if (isFinite(emaExtreme)) {
+                    valueList.add(emaExtreme);
+                }
+            }
+            if (overlays.contains("avl") && isFinite(item.avl)) {
+                valueList.add(item.avl);
+            }
+            if (overlays.contains("vwap") && isFinite(item.vwap)) {
+                valueList.add(item.vwap);
+            }
+            if (overlays.contains("super") && isFinite(item.superTrend)) {
+                valueList.add(item.superTrend);
+            }
+            if (overlays.contains("sar") && isFinite(item.sar)) {
+                valueList.add(item.sar);
+            }
         }
         float max = Float.MIN_VALUE;
         float min = Float.MAX_VALUE;
@@ -269,34 +495,67 @@ public class MainDraw implements IChartDraw<ICandle> {
      * @param close  收盘价
      */
     private void drawCandle(BaseKLineChartView view, Canvas canvas, float x, float high, float low, float open, float close) {
-        high = view.yFromValue(high);
-        low = view.yFromValue(low);
-        open = view.yFromValue(open);
-        close = view.yFromValue(close);
+        // Direction is decided from prices before converting to screen space so
+        // it is independent of the y-axis orientation (linear vs inverted).
+        boolean isUp = close >= open;
+
+        float highY = view.yFromValue(high);
+        float lowY = view.yFromValue(low);
+        float openY = view.yFromValue(open);
+        float closeY = view.yFromValue(close);
+
         float r = mCandleWidth / 2;
         float lineR = mCandleLineWidth / 2;
-        if (open > close) {
-            //实心
-            if (mCandleSolid) {
-                canvas.drawRect(x - r, close, x + r, open, mRedPaint);
-                canvas.drawRect(x - lineR, high, x + lineR, low, mRedPaint);
-            } else {
-                mRedPaint.setStrokeWidth(mCandleLineWidth);
-                canvas.drawLine(x, high, x, close, mRedPaint);
-                canvas.drawLine(x, open, x, low, mRedPaint);
-                canvas.drawLine(x - r + lineR, open, x - r + lineR, close, mRedPaint);
-                canvas.drawLine(x + r - lineR, open, x + r - lineR, close, mRedPaint);
-                mRedPaint.setStrokeWidth(mCandleLineWidth * view.getScaleX());
-                canvas.drawLine(x - r, open, x + r, open, mRedPaint);
-                canvas.drawLine(x - r, close, x + r, close, mRedPaint);
-            }
 
-        } else if (open < close) {
-            canvas.drawRect(x - r, open, x + r, close, mGreenPaint);
-            canvas.drawRect(x - lineR, high, x + lineR, low, mGreenPaint);
+        Paint paint = isUp ? mGreenPaint : mRedPaint;
+        float bodyTop = Math.min(openY, closeY);
+        float bodyBottom = Math.max(openY, closeY);
+        if (bodyBottom - bodyTop < 1) {
+            // Guarantee at least a 1px body so doji candles remain visible.
+            bodyBottom = bodyTop + 1;
+        }
+
+        String style = view.configManager.candleStyle;
+        if (style == null) {
+            style = "allSolid";
+        }
+
+        if (style.equals("ohlc")) {
+            Paint.Style previous = paint.getStyle();
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(mCandleLineWidth);
+            canvas.drawLine(x, highY, x, lowY, paint);       // high–low bar
+            canvas.drawLine(x - r, openY, x, openY, paint);  // open tick (left)
+            canvas.drawLine(x, closeY, x + r, closeY, paint);// close tick (right)
+            paint.setStyle(previous);
+            return;
+        }
+
+        boolean hollow;
+        if (style.equals("allHollow")) {
+            hollow = true;
+        } else if (style.equals("upHollow")) {
+            hollow = isUp;
+        } else if (style.equals("downHollow")) {
+            hollow = !isUp;
         } else {
-            canvas.drawRect(x - r, open, x + r, close + 1, mRedPaint);
-            canvas.drawRect(x - lineR, high, x + lineR, low, mRedPaint);
+            hollow = false; // allSolid
+        }
+
+        if (hollow) {
+            Paint.Style previous = paint.getStyle();
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(mCandleLineWidth);
+            // Wick above and below the body.
+            canvas.drawLine(x, highY, x, bodyTop, paint);
+            canvas.drawLine(x, bodyBottom, x, lowY, paint);
+            // Hollow body outline.
+            canvas.drawRect(x - r + lineR, bodyTop, x + r - lineR, bodyBottom, paint);
+            paint.setStyle(previous);
+        } else {
+            paint.setStyle(Paint.Style.FILL);
+            canvas.drawRect(x - r, bodyTop, x + r, bodyBottom, paint);
+            canvas.drawRect(x - lineR, highY, x + lineR, lowY, paint);
         }
     }
 
@@ -477,6 +736,7 @@ public class MainDraw implements IChartDraw<ICandle> {
         ma10Paint.setStrokeWidth(width);
         ma5Paint.setStrokeWidth(width);
         primaryPaint.setStrokeWidth(width);
+        overlayPaint.setStrokeWidth(width);
         mLinePaint.setStrokeWidth(width);
     }
 

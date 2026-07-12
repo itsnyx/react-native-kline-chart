@@ -78,6 +78,30 @@ class HTKLineModel: NSObject {
 
     var wrList = [HTKLineItemModel]()
 
+    // Native N4: generic sub-oscillator lines ({value,title}); drawn by HTGenericDraw.
+    var subLines = [HTKLineItemModel]()
+
+    // Phase 8-B main-chart overlays. Scalars default to .nan so the draw layer
+    // can skip candles that have no computed value.
+    var emaList = [HTKLineItemModel]()
+
+    var sar: CGFloat = .nan
+
+    var avl: CGFloat = .nan
+
+    var vwap: CGFloat = .nan
+
+    var superTrend: CGFloat = .nan
+
+    var superTrendUp: Bool = true
+
+    // Native N3: Ichimoku Cloud values (.nan = none for this candle).
+    var ichiTenkan: CGFloat = .nan
+    var ichiKijun: CGFloat = .nan
+    var ichiSpanA: CGFloat = .nan
+    var ichiSpanB: CGFloat = .nan
+    var ichiChikou: CGFloat = .nan
+
     var selectedItemList = [[String: Any]]()
 
     lazy var increment: Bool = {
@@ -97,6 +121,7 @@ class HTKLineModel: NSObject {
         model.maList = HTKLineItemModel.packModelArray(dictionary["maList"] as? [[String: Any]] ?? [])
         model.maVolumeList = HTKLineItemModel.packModelArray(dictionary["maVolumeList"] as? [[String: Any]] ?? [])
         model.rsiList = HTKLineItemModel.packModelArray(dictionary["rsiList"] as? [[String: Any]] ?? [])
+        model.subLines = HTKLineItemModel.packModelArray(dictionary["subLines"] as? [[String: Any]] ?? [])
         model.wrList = HTKLineItemModel.packModelArray(dictionary["wrList"] as? [[String: Any]] ?? [])
         model.bollMb = dictionary["bollMb"] as? CGFloat ?? 0
         model.bollUp = dictionary["bollUp"] as? CGFloat ?? 0
@@ -107,6 +132,18 @@ class HTKLineModel: NSObject {
         model.kdjK = dictionary["kdjK"] as? CGFloat ?? 0
         model.kdjD = dictionary["kdjD"] as? CGFloat ?? 0
         model.kdjJ = dictionary["kdjJ"] as? CGFloat ?? 0
+        // Phase 8-B overlays (all optional → .nan / empty when absent).
+        model.emaList = HTKLineItemModel.packModelArray(dictionary["emaList"] as? [[String: Any]] ?? [])
+        model.sar = dictionary["sar"] as? CGFloat ?? .nan
+        model.avl = dictionary["avl"] as? CGFloat ?? .nan
+        model.vwap = dictionary["vwap"] as? CGFloat ?? .nan
+        model.superTrend = dictionary["superTrend"] as? CGFloat ?? .nan
+        model.superTrendUp = dictionary["superTrendUp"] as? Bool ?? true
+        model.ichiTenkan = dictionary["ichiTenkan"] as? CGFloat ?? .nan
+        model.ichiKijun = dictionary["ichiKijun"] as? CGFloat ?? .nan
+        model.ichiSpanA = dictionary["ichiSpanA"] as? CGFloat ?? .nan
+        model.ichiSpanB = dictionary["ichiSpanB"] as? CGFloat ?? .nan
+        model.ichiChikou = dictionary["ichiChikou"] as? CGFloat ?? .nan
         var selectedItemList = dictionary["selectedItemList"] as? [[String: Any]] ?? [[String: Any]]()
         for (i, dictionary) in selectedItemList.enumerated() {
             if let color = dictionary["color"] as? Int {

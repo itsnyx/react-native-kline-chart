@@ -111,6 +111,8 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
 
     let wrDraw = HTWrDraw.init()
 
+    let genericDraw = HTGenericOscillatorDraw.init()
+
     var childDraw: HTKLineDrawProtocol?
 
     var animationView = LottieAnimationView()
@@ -250,6 +252,8 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
             childDraw = rsiDraw
         case .wr:
             childDraw = wrDraw
+        case .generic:
+            childDraw = genericDraw
         }
 
         // "At end" is measured against the resting flush position (newest candle against the

@@ -136,6 +136,8 @@ public class HTKLineConfigManager {
 	public PrimaryStatus primaryStatus = PrimaryStatus.MA;
 
 	public SecondStatus secondStatus = SecondStatus.MACD;
+	// Native N4: legend label for the GENERIC sub oscillator (e.g. "ROC").
+	public String secondLabel = "";
 
 	public Boolean isMinute = false;
 
@@ -234,6 +236,21 @@ public class HTKLineConfigManager {
 
     public int[] targetColorList = { Color.RED, Color.RED, Color.RED, Color.RED, Color.RED, Color.RED };
 
+    // Phase 8-B: additional main-chart overlays the JS layer asks us to draw
+    // (ids among "ema", "avl", "vwap", "super", "sar"). Never null so draw code
+    // can call .contains() without a guard.
+    public List<String> mainOverlays = new ArrayList();
+
+    // Native N1: candle body style — one of allSolid | allHollow | upHollow |
+    // downHollow | ohlc. Defaults to solid so behavior is unchanged when absent.
+    public String candleStyle = "allSolid";
+
+    // Native N2: main-chart coordinate type (linear | percentage | log) + inverted
+    // y-axis. percentageBase = opening price of the first candle (for % labels).
+    public String coordinateType = "linear";
+    public boolean invertedView = false;
+    public float percentageBase = 0f;
+
     public String bollN = "";
     public String bollP = "";
     public String kdjM1 = "";
@@ -287,6 +304,12 @@ public class HTKLineConfigManager {
         return object != null ? object : defaultValue;
     }
 
+    // Returns the float value of a JS number, or NaN if the value is missing /
+    // null / not a number. Used for optional per-candle overlay fields.
+    private static float numberOrNaN(Object value) {
+        return (value instanceof Number) ? ((Number) value).floatValue() : Float.NaN;
+    }
+
     public KLineEntity packModel(Map<String, Object> keyValue) {
     	KLineEntity entity = new KLineEntity();
         // IMPORTANT:
@@ -321,6 +344,22 @@ public class HTKLineConfigManager {
         entity.j = ((Number)this.getOrDefault(keyValue, "kdjK", 0.0)).floatValue();
         entity.rsiList = HTKLineTargetItem.packModelArray((List) this.getOrDefault(keyValue, "rsiList", new ArrayList()));
         entity.wrList = HTKLineTargetItem.packModelArray((List) this.getOrDefault(keyValue, "wrList", new ArrayList()));
+        entity.subLines = HTKLineTargetItem.packModelArray((List) this.getOrDefault(keyValue, "subLines", new ArrayList()));
+
+        // Phase 8-B overlays. All optional — parse defensively (missing / null /
+        // non-numeric → NaN or empty) so a candle without them never crashes.
+        entity.emaList = HTKLineTargetItem.packModelArray((List) this.getOrDefault(keyValue, "emaList", new ArrayList()));
+        entity.sar = numberOrNaN(keyValue.get("sar"));
+        entity.avl = numberOrNaN(keyValue.get("avl"));
+        entity.vwap = numberOrNaN(keyValue.get("vwap"));
+        entity.superTrend = numberOrNaN(keyValue.get("superTrend"));
+        Object superUp = keyValue.get("superTrendUp");
+        entity.superTrendUp = (superUp instanceof Boolean) ? (Boolean) superUp : true;
+        entity.ichiTenkan = numberOrNaN(keyValue.get("ichiTenkan"));
+        entity.ichiKijun = numberOrNaN(keyValue.get("ichiKijun"));
+        entity.ichiSpanA = numberOrNaN(keyValue.get("ichiSpanA"));
+        entity.ichiSpanB = numberOrNaN(keyValue.get("ichiSpanB"));
+        entity.ichiChikou = numberOrNaN(keyValue.get("ichiChikou"));
         return entity;
     }
 
@@ -479,7 +518,17 @@ public class HTKLineConfigManager {
                 secondStatus = SecondStatus.WR;
                 break;
             }
+            default: {
+                // Native N4: any code >= 100 is one of the generic oscillators;
+                // GenericOscillatorDraw renders it from the per-candle subLines.
+                if (second >= 100) {
+                    secondStatus = SecondStatus.GENERIC;
+                }
+                break;
+            }
         }
+        Object secondLabelObj = optionList.get("secondLabel");
+        this.secondLabel = secondLabelObj != null ? secondLabelObj.toString() : "";
         this.primaryStatus = primaryStatus;
         this.secondStatus = secondStatus;
         this.time = time;
@@ -610,6 +659,40 @@ public class HTKLineConfigManager {
 
 
         this.targetColorList = parseColorList(configList.get("targetColorList"));
+
+        // Phase 8-B: which extra main-chart overlays to draw. Defensive: only
+        // replace the (non-null) default when JS actually sends a list.
+        Object mainOverlaysObj = configList.get("mainOverlays");
+        if (mainOverlaysObj instanceof List) {
+            List<String> parsed = new ArrayList<String>();
+            for (Object o : (List) mainOverlaysObj) {
+                if (o != null) {
+                    parsed.add(o.toString());
+                }
+            }
+            this.mainOverlays = parsed;
+        } else {
+            this.mainOverlays = new ArrayList<String>();
+        }
+
+        Object candleStyleObj = configList.get("candleStyle");
+        if (candleStyleObj != null) {
+            this.candleStyle = candleStyleObj.toString();
+        }
+
+        Object coordinateTypeObj = configList.get("coordinateType");
+        if (coordinateTypeObj != null) {
+            this.coordinateType = coordinateTypeObj.toString();
+        }
+        Object invertedObj = configList.get("invertedView");
+        if (invertedObj instanceof Boolean) {
+            this.invertedView = (Boolean) invertedObj;
+        }
+        Object percentageBaseObj = configList.get("percentageBase");
+        if (percentageBaseObj instanceof Number) {
+            this.percentageBase = ((Number) percentageBaseObj).floatValue();
+        }
+
         this.minuteGradientColorList = parseColorList(configList.get("minuteGradientColorList"));
         this.minuteGradientLocationList = parseLocationList(configList.get("minuteGradientLocationList"));
 

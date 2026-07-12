@@ -21,7 +21,10 @@ High-performance candlestick (K-Line) chart component for React Native with inte
 - Long-press crosshair with animated info panel
 - Real-time data updates via `modelArray` prop (WebSocket-friendly)
 - Infinite scroll for loading historical candles (`onEndReached`)
-- Technical indicators: MA, BOLL, MACD, KDJ, RSI, WR
+- **Main-chart overlays (multi-select, combine freely):** MA, EMA, BOLL, SAR, AVL, VWAP, Supertrend, and Ichimoku Cloud (with Kumo cloud fill)
+- **Sub-chart oscillators:** VOL, MACD, KDJ, RSI, WR plus ROC, CCI, OBV, StochRSI, MFI, DMI, DMA, MTM, EMV
+- **Candle styles:** all-solid, all-hollow, up-hollow, down-hollow, OHLC bars
+- **Coordinate types:** linear, percentage, logarithmic, and inverted axis (Android)
 - 15 drawing tools: trend lines, horizontal/vertical lines, rays, channels, rectangles, parallelograms, text annotations, price lines, time lines, candle markers, rulers, and more
 - Drawing persistence: save and restore `drawItemList` across sessions
 - Dark and light themes with full color customization
@@ -113,6 +116,7 @@ Additional computed fields for indicators (`maList`, `bollMb`, `bollUp`, `bollDn
 | Property | Type | Description |
 |----------|------|-------------|
 | `colorList` | `{ increaseColor, decreaseColor }` | Bull/bear candle colors (use `processColor()`) |
+| `mainOverlays` | `string[]` | Extra main-chart overlays to draw in addition to MA/BOLL: any of `"ema"`, `"avl"`, `"vwap"`, `"super"`, `"sar"`. Each candle in `modelArray` must carry the matching pre-computed field(s): `emaList` (`[{value,title}]`), `avl`, `vwap`, `superTrend` + `superTrendUp`, `sar`. Missing/`NaN` values are skipped safely. |
 | `targetColorList` | `number[]` | Colors for indicator lines |
 | `backgroundColor` | `number` | Chart background |
 | `textColor` | `number` | Axis text color |
@@ -127,6 +131,32 @@ Additional computed fields for indicators (`maList`, `bollMb`, `bollUp`, `bollDn
 | `paddingTop` / `paddingBottom` / `paddingRight` | `number` | Chart padding |
 
 All color values should be passed through React Native's `processColor()`.
+
+### New in v0.4 — overlays, oscillators, styles & coordinates
+
+These fields extend the payload to unlock the full indicator set. See
+[`example/App.tsx`](./example/App.tsx) + [`example/indicators.js`](./example/indicators.js)
+for an end-to-end reference.
+
+**`configList.mainOverlays`** — `string[]`. Main-chart overlays drawn *in addition to*
+the single `primary` MA/BOLL slot, so any combination shows together. Ids:
+`"ma"`, `"boll"`, `"ema"`, `"avl"`, `"vwap"`, `"super"`, `"sar"`, `"ichi"`. Each candle
+in `modelArray` must carry the matching pre-computed field(s): `maList`, `emaList`,
+`bollUp/bollMb/bollDn`, `avl`, `vwap`, `superTrend`+`superTrendUp`, `sar`, and
+`ichiTenkan/ichiKijun/ichiSpanA/ichiSpanB/ichiChikou`.
+
+**`configList.candleStyle`** — `"allSolid" | "allHollow" | "upHollow" | "downHollow" | "ohlc"`.
+
+**`configList.coordinateType`** — `"linear" | "percentage" | "log"` (Android). Percentage is
+relative to the first candle's open; log is guarded against non-positive values.
+
+**`configList.invertedView`** — `boolean` (Android). Flips the main price axis.
+
+**Sub-chart oscillators** — the built-ins use `second` = `3` MACD / `4` KDJ / `5` RSI /
+`6` WR. The nine extra oscillators use `second` codes `>= 100` and render through one
+generic panel: send `secondLabel` (e.g. `"ROC"`) at the top level and attach a
+`subLines` array — `[{ value, title }]` — to each candle. Codes: ROC `100`, CCI `101`,
+OBV `102`, StochRSI `103`, MFI `104`, DMI `105`, DMA `106`, MTM `107`, EMV `108`.
 
 ### targetList (Indicator Parameters)
 

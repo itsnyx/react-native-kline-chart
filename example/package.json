@@ -11,9 +11,9 @@
     "postinstall": "rm -rf ./node_modules/@itsnyx/react-native-kline-chart/example"
   },
   "dependencies": {
+    "@itsnyx/react-native-kline-chart": "../",
     "react": "19.1.0",
-    "react-native": "0.80.0",
-    "@itsnyx/react-native-kline-chart": "../"
+    "react-native": "0.80.0"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
