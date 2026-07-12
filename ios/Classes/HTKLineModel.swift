@@ -95,6 +95,10 @@ class HTKLineModel: NSObject {
 
     var superTrendUp: Bool = true
 
+    // Support & Resistance overlay levels (.nan = none for this candle).
+    var resistR: CGFloat = .nan
+    var resistS: CGFloat = .nan
+
     // Native N3: Ichimoku Cloud values (.nan = none for this candle).
     var ichiTenkan: CGFloat = .nan
     var ichiKijun: CGFloat = .nan
@@ -139,6 +143,8 @@ class HTKLineModel: NSObject {
         model.vwap = dictionary["vwap"] as? CGFloat ?? .nan
         model.superTrend = dictionary["superTrend"] as? CGFloat ?? .nan
         model.superTrendUp = dictionary["superTrendUp"] as? Bool ?? true
+        model.resistR = dictionary["resistR"] as? CGFloat ?? .nan
+        model.resistS = dictionary["resistS"] as? CGFloat ?? .nan
         model.ichiTenkan = dictionary["ichiTenkan"] as? CGFloat ?? .nan
         model.ichiKijun = dictionary["ichiKijun"] as? CGFloat ?? .nan
         model.ichiSpanA = dictionary["ichiSpanA"] as? CGFloat ?? .nan

@@ -43,6 +43,18 @@ public class VolumeDraw implements IChartDraw<IVolume> {
         mGreenPaint.setColor(view.configManager.decreaseColor);
     }
 
+    /** targetColorList lookup that never throws on short/missing color arrays. */
+    private static int colorAt(BaseKLineChartView view, int index) {
+        int[] colors = view.configManager.targetColorList;
+        if (colors == null || colors.length == 0) {
+            return 0xFF888888;
+        }
+        if (index < 0) {
+            index = 0;
+        }
+        return colors[index % colors.length];
+    }
+
     @Override
     public void drawTranslated(
             @Nullable IVolume lastPoint, @NonNull IVolume curPoint, float lastX, float curX,
@@ -51,10 +63,16 @@ public class VolumeDraw implements IChartDraw<IVolume> {
         drawHistogram(canvas, curPoint, lastPoint, curX, view, position);
         KLineEntity lastItem = (KLineEntity) lastPoint;
         KLineEntity currentItem = (KLineEntity) curPoint;
-        for (int i = 0; i < view.configManager.maVolumeList.size(); i++) {
+        // The config (optionList) and the candle data (modelArray) arrive as separate
+        // props, so a redraw can happen while the per-candle lists are still shorter
+        // than the configured count — clamp instead of crashing.
+        int count = Math.min(view.configManager.maVolumeList.size(),
+                Math.min(currentItem.maVolumeList != null ? currentItem.maVolumeList.size() : 0,
+                        lastItem.maVolumeList != null ? lastItem.maVolumeList.size() : 0));
+        for (int i = 0; i < count; i++) {
             HTKLineTargetItem currentTargetItem = (HTKLineTargetItem) currentItem.maVolumeList.get(i);
             HTKLineTargetItem lastTargetItem = (HTKLineTargetItem) lastItem.maVolumeList.get(i);
-            primaryPaint.setColor(view.configManager.targetColorList[view.configManager.maVolumeList.get(i).index]);
+            primaryPaint.setColor(colorAt(view, view.configManager.maVolumeList.get(i).index));
             view.drawVolLine(canvas, primaryPaint, lastX, lastTargetItem.value, curX, currentTargetItem.value);
         }
     }
@@ -87,12 +105,14 @@ public class VolumeDraw implements IChartDraw<IVolume> {
             ValueFormatter valueFormatter = (ValueFormatter)formatter;
             String space = "  ";
             String text = "VOL:" + valueFormatter.formatVolume(point.getVolume()) + "  ";
-            primaryPaint.setColor(view.configManager.targetColorList[5]);
+            primaryPaint.setColor(colorAt(view, 5));
             canvas.drawText(text, x, y, primaryPaint);
             x += view.getTextPaint().measureText(text);
-            for (int i = 0; i < view.configManager.maVolumeList.size(); i++) {
+            int count = Math.min(view.configManager.maVolumeList.size(),
+                    point.maVolumeList != null ? point.maVolumeList.size() : 0);
+            for (int i = 0; i < count; i++) {
                 HTKLineTargetItem targetItem = (HTKLineTargetItem) point.maVolumeList.get(i);
-                primaryPaint.setColor(view.configManager.targetColorList[view.configManager.maVolumeList.get(i).index]);
+                primaryPaint.setColor(colorAt(view, view.configManager.maVolumeList.get(i).index));
                 StringBuilder stringBuilder = new StringBuilder();
                 stringBuilder.append("MA");
                 stringBuilder.append(targetItem.title);

@@ -57,6 +57,9 @@ class HTMainDraw: NSObject, HTKLineDrawProtocol {
                 if overlays.contains("sar"), model.sar.isFinite {
                     valueList.append(model.sar)
                 }
+                if overlays.contains("resist") {
+                    valueList.append(contentsOf: [model.resistR, model.resistS].filter({ $0.isFinite }))
+                }
             }
 
             maxValue = max(maxValue, valueList.max() ?? 0)
@@ -294,6 +297,16 @@ class HTMainDraw: NSObject, HTKLineDrawProtocol {
             context.setFillColor(overlayColor(3, configManager).cgColor)
             context.fillEllipse(in: CGRect(x: x - r, y: y - r, width: 2 * r, height: 2 * r))
         }
+        // Support & Resistance: resistance in the bearish color, support in the
+        // bullish color (step-style levels; non-finite segments are skipped).
+        if overlays.contains("resist") {
+            if model.resistR.isFinite, lastModel.resistR.isFinite {
+                drawLine(value: model.resistR, lastValue: lastModel.resistR, maxValue: maxValue, minValue: minValue, baseY: baseY, height: height, index: index, lastIndex: lastIndex, color: configManager.decreaseColor, isBezier: false, context: context, configManager: configManager)
+            }
+            if model.resistS.isFinite, lastModel.resistS.isFinite {
+                drawLine(value: model.resistS, lastValue: lastModel.resistS, maxValue: maxValue, minValue: minValue, baseY: baseY, height: height, index: index, lastIndex: lastIndex, color: configManager.increaseColor, isBezier: false, context: context, configManager: configManager)
+            }
+        }
     }
 
     /// Draws one Ichimoku line segment, skipping non-finite endpoints.
@@ -383,6 +396,18 @@ class HTMainDraw: NSObject, HTKLineDrawProtocol {
             let title = String(format: "SAR:%@", configManager.precision(model.sar, configManager.price))
             x += drawText(title: title, point: CGPoint.init(x: x, y: baseY), color: overlayColor(3, configManager), font: font, context: context, configManager: configManager)
             x += 5
+        }
+        if overlays.contains("resist") {
+            if model.resistR.isFinite {
+                let title = String(format: "R:%@", configManager.precision(model.resistR, configManager.price))
+                x += drawText(title: title, point: CGPoint.init(x: x, y: baseY), color: configManager.decreaseColor, font: font, context: context, configManager: configManager)
+                x += 5
+            }
+            if model.resistS.isFinite {
+                let title = String(format: "S:%@", configManager.precision(model.resistS, configManager.price))
+                x += drawText(title: title, point: CGPoint.init(x: x, y: baseY), color: configManager.increaseColor, font: font, context: context, configManager: configManager)
+                x += 5
+            }
         }
         return x
     }

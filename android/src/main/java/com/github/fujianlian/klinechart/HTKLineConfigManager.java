@@ -355,6 +355,8 @@ public class HTKLineConfigManager {
         entity.superTrend = numberOrNaN(keyValue.get("superTrend"));
         Object superUp = keyValue.get("superTrendUp");
         entity.superTrendUp = (superUp instanceof Boolean) ? (Boolean) superUp : true;
+        entity.resistR = numberOrNaN(keyValue.get("resistR"));
+        entity.resistS = numberOrNaN(keyValue.get("resistS"));
         entity.ichiTenkan = numberOrNaN(keyValue.get("ichiTenkan"));
         entity.ichiKijun = numberOrNaN(keyValue.get("ichiKijun"));
         entity.ichiSpanA = numberOrNaN(keyValue.get("ichiSpanA"));

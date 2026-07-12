@@ -155,21 +155,21 @@ public class MainDraw implements IChartDraw<ICandle> {
             for (int i = 0; i < itemSize; i++) {
                 HTKLineTargetItem currentTargetItem = (HTKLineTargetItem) currentItem.maList.get(i);
                 HTKLineTargetItem lastTargetItem = (HTKLineTargetItem) lastItem.maList.get(i);
-                primaryPaint.setColor(view.configManager.targetColorList[view.configManager.maList.get(i).index]);
+                primaryPaint.setColor(overlayColor(view, view.configManager.maList.get(i).index));
                 view.drawMainLine(canvas, this.primaryPaint, lastX, lastTargetItem.value, curX, currentTargetItem.value);
             }
         } else if (primaryStatus == PrimaryStatus.BOLL) {
             //画boll
             if (lastPoint.getMb() != 0) {
-                primaryPaint.setColor(view.configManager.targetColorList[0]);
+                primaryPaint.setColor(overlayColor(view, 0));
                 view.drawMainLine(canvas, primaryPaint, lastX, lastPoint.getMb(), curX, curPoint.getMb());
             }
             if (lastPoint.getUp() != 0) {
-                primaryPaint.setColor(view.configManager.targetColorList[1]);
+                primaryPaint.setColor(overlayColor(view, 1));
                 view.drawMainLine(canvas, primaryPaint, lastX, lastPoint.getUp(), curX, curPoint.getUp());
             }
             if (lastPoint.getDn() != 0) {
-                primaryPaint.setColor(view.configManager.targetColorList[2]);
+                primaryPaint.setColor(overlayColor(view, 2));
                 view.drawMainLine(canvas, primaryPaint, lastX, lastPoint.getDn(), curX, curPoint.getDn());
             }
         }
@@ -302,6 +302,12 @@ public class MainDraw implements IChartDraw<ICandle> {
             canvas.drawCircle(curX, view.yFromValue(cur.sar), mSarRadius, overlayPaint);
             overlayPaint.setStyle(Paint.Style.STROKE);
         }
+        // Support & Resistance: resistance in the bearish color, support in the
+        // bullish color (step-style levels; NaN segments are skipped).
+        if (overlays.contains("resist")) {
+            drawOverlayLine(view, canvas, view.configManager.decreaseColor, lastX, last.resistR, curX, cur.resistR);
+            drawOverlayLine(view, canvas, view.configManager.increaseColor, lastX, last.resistS, curX, cur.resistS);
+        }
     }
 
     @Override
@@ -320,7 +326,7 @@ public class MainDraw implements IChartDraw<ICandle> {
                 int itemSize = Math.min(configSize, point.maList.size());
                 for (int i = 0; i < itemSize; i++) {
                     HTKLineTargetItem targetItem = (HTKLineTargetItem) point.maList.get(i);
-                    this.primaryPaint.setColor(view.configManager.targetColorList[view.configManager.maList.get(i).index]);
+                    this.primaryPaint.setColor(overlayColor(view, view.configManager.maList.get(i).index));
                     StringBuilder stringBuilder = new StringBuilder();
                     stringBuilder.append("MA");
                     stringBuilder.append(targetItem.title);
@@ -334,15 +340,15 @@ public class MainDraw implements IChartDraw<ICandle> {
             } else if (primaryStatus == PrimaryStatus.BOLL) {
                 if (point.getMb() != 0) {
                     text = "BOLL:" + view.formatValue(point.getMb()) + space;
-                    this.primaryPaint.setColor(view.configManager.targetColorList[0]);
+                    this.primaryPaint.setColor(overlayColor(view, 0));
                     canvas.drawText(text, x, y, primaryPaint);
                     x += ma5Paint.measureText(text);
                     text = "UB:" + view.formatValue(point.getUp()) + space;
-                    this.primaryPaint.setColor(view.configManager.targetColorList[1]);
+                    this.primaryPaint.setColor(overlayColor(view, 1));
                     canvas.drawText(text, x, y, primaryPaint);
                     x += ma10Paint.measureText(text);
                     text = "LB:" + view.formatValue(point.getDn());
-                    this.primaryPaint.setColor(view.configManager.targetColorList[2]);
+                    this.primaryPaint.setColor(overlayColor(view, 2));
                     canvas.drawText(text, x, y, primaryPaint);
                 }
             }
@@ -394,6 +400,20 @@ public class MainDraw implements IChartDraw<ICandle> {
             text = "SAR:" + view.formatValue(point.sar) + space;
             canvas.drawText(text, x, y, this.primaryPaint);
             x += this.primaryPaint.measureText(text);
+        }
+        if (overlays.contains("resist")) {
+            if (isFinite(point.resistR)) {
+                this.primaryPaint.setColor(view.configManager.decreaseColor);
+                text = "R:" + view.formatValue(point.resistR) + space;
+                canvas.drawText(text, x, y, this.primaryPaint);
+                x += this.primaryPaint.measureText(text);
+            }
+            if (isFinite(point.resistS)) {
+                this.primaryPaint.setColor(view.configManager.increaseColor);
+                text = "S:" + view.formatValue(point.resistS) + space;
+                canvas.drawText(text, x, y, this.primaryPaint);
+                x += this.primaryPaint.measureText(text);
+            }
         }
         return x;
     }
@@ -451,6 +471,10 @@ public class MainDraw implements IChartDraw<ICandle> {
             }
             if (overlays.contains("sar") && isFinite(item.sar)) {
                 valueList.add(item.sar);
+            }
+            if (overlays.contains("resist")) {
+                if (isFinite(item.resistR)) valueList.add(item.resistR);
+                if (isFinite(item.resistS)) valueList.add(item.resistS);
             }
         }
         float max = Float.MIN_VALUE;

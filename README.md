@@ -140,10 +140,11 @@ for an end-to-end reference.
 
 **`configList.mainOverlays`** — `string[]`. Main-chart overlays drawn *in addition to*
 the single `primary` MA/BOLL slot, so any combination shows together. Ids:
-`"ma"`, `"boll"`, `"ema"`, `"avl"`, `"vwap"`, `"super"`, `"sar"`, `"ichi"`. Each candle
-in `modelArray` must carry the matching pre-computed field(s): `maList`, `emaList`,
-`bollUp/bollMb/bollDn`, `avl`, `vwap`, `superTrend`+`superTrendUp`, `sar`, and
-`ichiTenkan/ichiKijun/ichiSpanA/ichiSpanB/ichiChikou`.
+`"ma"`, `"boll"`, `"ema"`, `"avl"`, `"vwap"`, `"super"`, `"sar"`, `"ichi"`, `"resist"`.
+Each candle in `modelArray` must carry the matching pre-computed field(s): `maList`,
+`emaList`, `bollUp/bollMb/bollDn`, `avl`, `vwap`, `superTrend`+`superTrendUp`, `sar`,
+`ichiTenkan/ichiKijun/ichiSpanA/ichiSpanB/ichiChikou`, and `resistR`/`resistS`
+(support & resistance levels, drawn in the bear/bull colors — added in 0.4.1).
 
 **`configList.candleStyle`** — `"allSolid" | "allHollow" | "upHollow" | "downHollow" | "ohlc"`.
 

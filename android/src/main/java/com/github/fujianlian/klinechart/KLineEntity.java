@@ -196,6 +196,9 @@ public class KLineEntity implements IKLine {
     public float vwap = Float.NaN;
     public float superTrend = Float.NaN;
     public boolean superTrendUp = true;
+    // Support & Resistance overlay levels (NaN = not computed for this candle).
+    public float resistR = Float.NaN;
+    public float resistS = Float.NaN;
 
     // Native N3: Ichimoku Cloud lines. NaN = no value for this candle.
     public float ichiTenkan = Float.NaN;
