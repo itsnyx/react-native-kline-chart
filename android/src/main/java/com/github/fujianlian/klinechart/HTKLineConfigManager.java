@@ -132,12 +132,26 @@ public class HTKLineConfigManager {
     // Controlled from JS via optionList.configList.hoverInfoEnabled (default: true).
     public boolean hoverInfoEnabled = true;
 
+    // Abstract-on-chart placement for the selected-candle info ("floatingPanel" |
+    // "topLayer" | "none"). "topLayer" draws a full-width summary strip pinned to
+    // the top of the chart instead of the floating panel. Default keeps the
+    // legacy floating panel so old JS bundles are unaffected.
+    public String hoverInfoMode = "floatingPanel";
+
 
 	public PrimaryStatus primaryStatus = PrimaryStatus.MA;
 
 	public SecondStatus secondStatus = SecondStatus.MACD;
 	// Native N4: legend label for the GENERIC sub oscillator (e.g. "ROC").
 	public String secondLabel = "";
+
+	// Native N7: all stacked sub-panel codes (order = top→bottom) and their
+	// legend labels. Empty → fall back to the single secondStatus panel.
+	public List<Integer> secondList = new ArrayList<>();
+	public List<String> secondLabelList = new ArrayList<>();
+	// Fixed per-panel height (device px) for stacked sub-panels. 0 → legacy
+	// flex-based single-panel layout.
+	public float subPanelHeight = 0f;
 
 	public Boolean isMinute = false;
 
@@ -235,6 +249,22 @@ public class HTKLineConfigManager {
 
 
     public int[] targetColorList = { Color.RED, Color.RED, Color.RED, Color.RED, Color.RED, Color.RED };
+
+    // Native N6 (0.4.3): exact per-indicator line colors from the JS indicator
+    // settings pages. Keyed by indicator id ("boll", "macd", "kdj", "ichi",
+    // "avl", "vwap", "sar", "super", "resist", "sub"); values are ordered color
+    // lists. A missing key (old JS bundle, or an indicator the user never
+    // recolored) falls back to the shared targetColorList slot lookup.
+    public Map<String, int[]> indicatorColors = new java.util.HashMap<>();
+
+    /** Explicit indicator line color, or `fallback` when JS didn't send one. */
+    public int indicatorColor(String key, int i, int fallback) {
+        int[] list = indicatorColors.get(key);
+        if (list == null || i < 0 || i >= list.length) {
+            return fallback;
+        }
+        return list[i];
+    }
 
     // Phase 8-B: additional main-chart overlays the JS layer asks us to draw
     // (ids among "ema", "avl", "vwap", "super", "sar"). Never null so draw code
@@ -345,6 +375,18 @@ public class HTKLineConfigManager {
         entity.rsiList = HTKLineTargetItem.packModelArray((List) this.getOrDefault(keyValue, "rsiList", new ArrayList()));
         entity.wrList = HTKLineTargetItem.packModelArray((List) this.getOrDefault(keyValue, "wrList", new ArrayList()));
         entity.subLines = HTKLineTargetItem.packModelArray((List) this.getOrDefault(keyValue, "subLines", new ArrayList()));
+        // Native N7: per-generic-panel subLines (list of lists).
+        entity.subLinesList = new ArrayList();
+        Object subLinesListObj = keyValue.get("subLinesList");
+        if (subLinesListObj instanceof List) {
+            for (Object panel : (List) subLinesListObj) {
+                if (panel instanceof List) {
+                    entity.subLinesList.add(HTKLineTargetItem.packModelArray((List) panel));
+                } else {
+                    entity.subLinesList.add(new ArrayList());
+                }
+            }
+        }
 
         // Phase 8-B overlays. All optional — parse defensively (missing / null /
         // non-numeric → NaN or empty) so a candle without them never crashes.
@@ -531,6 +573,25 @@ public class HTKLineConfigManager {
         }
         Object secondLabelObj = optionList.get("secondLabel");
         this.secondLabel = secondLabelObj != null ? secondLabelObj.toString() : "";
+
+        // Native N7: full stacked sub-panel list + per-panel labels.
+        this.secondList = new ArrayList<>();
+        Object secondListObj = optionList.get("secondList");
+        if (secondListObj instanceof List) {
+            for (Object o : (List) secondListObj) {
+                if (o instanceof Number) {
+                    this.secondList.add(((Number) o).intValue());
+                }
+            }
+        }
+        this.secondLabelList = new ArrayList<>();
+        Object secondLabelListObj = optionList.get("secondLabelList");
+        if (secondLabelListObj instanceof List) {
+            for (Object o : (List) secondLabelListObj) {
+                this.secondLabelList.add(o != null ? o.toString() : "");
+            }
+        }
+
         this.primaryStatus = primaryStatus;
         this.secondStatus = secondStatus;
         this.time = time;
@@ -654,6 +715,19 @@ public class HTKLineConfigManager {
             this.hoverInfoEnabled = true;
         }
 
+        Object hoverInfoModeObj = configList.get("hoverInfoMode");
+        if (hoverInfoModeObj instanceof String) {
+            this.hoverInfoMode = (String) hoverInfoModeObj;
+        } else {
+            this.hoverInfoMode = "floatingPanel";
+        }
+
+        // Native N7: fixed per-panel height for stacked sub-panels (device px).
+        Object subPanelHeightObj = configList.get("subPanelHeight");
+        this.subPanelHeight = subPanelHeightObj instanceof Number
+                ? ((Number) subPanelHeightObj).floatValue()
+                : 0f;
+
 
         this.minuteVolumeCandleColor = ((Number) configList.get("minuteVolumeCandleColor")).intValue();
         this.minuteVolumeCandleWidth = ((Number)configList.get("minuteVolumeCandleWidth")).floatValue();
@@ -661,6 +735,25 @@ public class HTKLineConfigManager {
 
 
         this.targetColorList = parseColorList(configList.get("targetColorList"));
+
+        // Native N6 (0.4.3): optional exact per-indicator colors. Defensive:
+        // ignore anything that isn't a { name: [colorInt, ...] } map so an old
+        // (or malformed) JS payload simply keeps the slot-based fallback.
+        Map<String, int[]> parsedIndicatorColors = new java.util.HashMap<>();
+        Object indicatorColorsObj = configList.get("indicatorColors");
+        if (indicatorColorsObj instanceof Map) {
+            for (Object entryObj : ((Map) indicatorColorsObj).entrySet()) {
+                Map.Entry entry = (Map.Entry) entryObj;
+                if (entry.getKey() == null || !(entry.getValue() instanceof List)) {
+                    continue;
+                }
+                try {
+                    parsedIndicatorColors.put(entry.getKey().toString(), parseColorList(entry.getValue()));
+                } catch (Exception ignored) {
+                }
+            }
+        }
+        this.indicatorColors = parsedIndicatorColors;
 
         // Phase 8-B: which extra main-chart overlays to draw. Defensive: only
         // replace the (non-null) default when JS actually sends a list.

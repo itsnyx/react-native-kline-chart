@@ -34,9 +34,9 @@ public class KDJDraw implements IChartDraw<IKDJ> {
     }
 
     public void reloadColor(BaseKLineChartView view) {
-        mKPaint.setColor(view.configManager.targetColorList[0]);
-        mDPaint.setColor(view.configManager.targetColorList[1]);
-        mJPaint.setColor(view.configManager.targetColorList[2]);
+        mKPaint.setColor(view.configManager.indicatorColor("kdj", 0, view.configManager.targetColorList[0]));
+        mDPaint.setColor(view.configManager.indicatorColor("kdj", 1, view.configManager.targetColorList[1]));
+        mJPaint.setColor(view.configManager.indicatorColor("kdj", 2, view.configManager.targetColorList[2]));
     }
 
     @Override

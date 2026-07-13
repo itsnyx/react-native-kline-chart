@@ -35,8 +35,8 @@ class HTMacdDraw: NSObject, HTKLineDrawProtocol {
             return
         }
         let itemList = [
-            ["value": model.macdDif, "lastValue": lastModel.macdDif, "color": configManager.targetColorList[0]],
-            ["value": model.macdDea, "lastValue": lastModel.macdDea, "color": configManager.targetColorList[1]],
+            ["value": model.macdDif, "lastValue": lastModel.macdDif, "color": configManager.indicatorColor("macd", 0, configManager.targetColorList[0])],
+            ["value": model.macdDea, "lastValue": lastModel.macdDea, "color": configManager.indicatorColor("macd", 1, configManager.targetColorList[1])],
         ]
         for item in itemList {
             drawLine(value: item["value"] as? CGFloat ?? 0, lastValue: item["lastValue"] as? CGFloat ?? 0, maxValue: maxValue, minValue: minValue, baseY: baseY, height: height, index: index, lastIndex: lastIndex, color: item["color"] as? UIColor ?? UIColor.orange, isBezier: false, context: context, configManager: configManager)
@@ -48,12 +48,13 @@ class HTMacdDraw: NSObject, HTKLineDrawProtocol {
         guard configManager.targetColorList.count >= 2 else {
             return
         }
-        let macdColor = configManager.targetColorList.count > 5 ? configManager.targetColorList[5] : configManager.textColor
+        let macdFallback = configManager.targetColorList.count > 5 ? configManager.targetColorList[5] : configManager.textColor
+        let macdColor = configManager.indicatorColor("macd", 2, macdFallback)
         let itemList = [
             ["title": String(format: "MACD(%@,%@,%@)", configManager.macdS, configManager.macdL, configManager.macdM), "color": configManager.textColor],
             ["title": String(format: "MACD:%@", configManager.precision(model.macdValue, -1)), "color": macdColor],
-            ["title": String(format: "DIF:%@", configManager.precision(model.macdDif, -1)), "color": configManager.targetColorList[0]],
-            ["title": String(format: "DEA:%@", configManager.precision(model.macdDea, -1)), "color": configManager.targetColorList[1]],
+            ["title": String(format: "DIF:%@", configManager.precision(model.macdDif, -1)), "color": configManager.indicatorColor("macd", 0, configManager.targetColorList[0])],
+            ["title": String(format: "DEA:%@", configManager.precision(model.macdDea, -1)), "color": configManager.indicatorColor("macd", 1, configManager.targetColorList[1])],
         ]
         let font = configManager.createFont(configManager.headerTextFontSize)
         for item in itemList {

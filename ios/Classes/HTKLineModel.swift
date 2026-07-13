@@ -18,6 +18,36 @@ class HTKLineItemModel: NSObject {
 
     var index = 0
 
+    // Native N6 (0.4.3): explicit per-line color. When present it wins over the
+    // shared targetColorList slot lookup, so the exact color the user picked in
+    // the indicator settings is drawn regardless of what else is on screen.
+    var color: UIColor? = nil
+
+    /// `color` arrives as a processColor int (optionList target items) or a
+    /// "#RRGGBB" hex string (per-candle items computed on the JS side).
+    static func parseColor(_ value: Any?) -> UIColor? {
+        if let number = value as? NSNumber {
+            return RCTConvert.uiColor(number.intValue)
+        }
+        if let string = value as? String {
+            var hex = string.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard hex.hasPrefix("#") else {
+                return nil
+            }
+            hex.removeFirst()
+            guard hex.count == 6 || hex.count == 8, let raw = UInt64(hex, radix: 16) else {
+                return nil
+            }
+            let hasAlpha = hex.count == 8
+            let r = CGFloat((raw >> (hasAlpha ? 24 : 16)) & 0xFF) / 255.0
+            let g = CGFloat((raw >> (hasAlpha ? 16 : 8)) & 0xFF) / 255.0
+            let b = CGFloat((raw >> (hasAlpha ? 8 : 0)) & 0xFF) / 255.0
+            let a = hasAlpha ? CGFloat(raw & 0xFF) / 255.0 : 1.0
+            return UIColor(red: r, green: g, blue: b, alpha: a)
+        }
+        return nil
+    }
+
     static func packModelArray(_ modelList: [[String: Any]]) -> [HTKLineItemModel] {
         var modelArray = [HTKLineItemModel]()
         for dictionary in modelList {
@@ -26,6 +56,7 @@ class HTKLineItemModel: NSObject {
             itemModel.value = dictionary["value"] as? CGFloat ?? 0
             itemModel.selected = dictionary["selected"] as? Bool ?? true
             itemModel.index = dictionary["index"] as? Int ?? 0
+            itemModel.color = parseColor(dictionary["color"])
             if itemModel.selected {
                 modelArray.append(itemModel)
             }
@@ -81,6 +112,9 @@ class HTKLineModel: NSObject {
     // Native N4: generic sub-oscillator lines ({value,title}); drawn by HTGenericDraw.
     var subLines = [HTKLineItemModel]()
 
+    // Native N7: one subLines list per stacked generic panel (order = secondList).
+    var subLinesList = [[HTKLineItemModel]]()
+
     // Phase 8-B main-chart overlays. Scalars default to .nan so the draw layer
     // can skip candles that have no computed value.
     var emaList = [HTKLineItemModel]()
@@ -126,6 +160,9 @@ class HTKLineModel: NSObject {
         model.maVolumeList = HTKLineItemModel.packModelArray(dictionary["maVolumeList"] as? [[String: Any]] ?? [])
         model.rsiList = HTKLineItemModel.packModelArray(dictionary["rsiList"] as? [[String: Any]] ?? [])
         model.subLines = HTKLineItemModel.packModelArray(dictionary["subLines"] as? [[String: Any]] ?? [])
+        // Native N7: per-generic-panel subLines.
+        model.subLinesList = (dictionary["subLinesList"] as? [[[String: Any]]] ?? [])
+            .map { HTKLineItemModel.packModelArray($0) }
         model.wrList = HTKLineItemModel.packModelArray(dictionary["wrList"] as? [[String: Any]] ?? [])
         model.bollMb = dictionary["bollMb"] as? CGFloat ?? 0
         model.bollUp = dictionary["bollUp"] as? CGFloat ?? 0

@@ -10,6 +10,16 @@ import UIKit
 
 class HTWrDraw: NSObject, HTKLineDrawProtocol {
 
+    /** Color from the shared palette, wrapping the index; gray if palette empty. */
+    private func paletteColor(_ i: Int, _ configManager: HTKLineConfigManager) -> UIColor {
+        let list = configManager.targetColorList
+        if list.isEmpty {
+            return UIColor.gray
+        }
+        let idx = ((i % list.count) + list.count) % list.count
+        return list[idx]
+    }
+
     func minMaxRange(_ visibleModelArray: [HTKLineModel], _ configManager: HTKLineConfigManager) -> Range<CGFloat> {
         var maxValue = CGFloat.leastNormalMagnitude
         var minValue = CGFloat.greatestFiniteMagnitude
@@ -38,18 +48,17 @@ class HTWrDraw: NSObject, HTKLineDrawProtocol {
             return
         }
 
-        for itemModel in configManager.wrList {
-            let idx = itemModel.index
-            guard idx >= 0,
-                  idx < model.wrList.count,
-                  idx < lastModel.wrList.count,
-                  idx < configManager.targetColorList.count else {
+        // Iterate positionally: `itemModel.index` is a color slot (it can point
+        // past the per-candle list into the extended palette), never a data index.
+        for (i, itemModel) in configManager.wrList.enumerated() {
+            guard i < model.wrList.count,
+                  i < lastModel.wrList.count else {
                 continue
             }
-            let color = configManager.targetColorList[idx]
+            let color = itemModel.color ?? paletteColor(itemModel.index, configManager)
             drawLine(
-                value: model.wrList[idx].value,
-                lastValue: lastModel.wrList[idx].value,
+                value: model.wrList[i].value,
+                lastValue: lastModel.wrList[i].value,
                 maxValue: maxValue,
                 minValue: minValue,
                 baseY: baseY,
@@ -70,16 +79,13 @@ class HTWrDraw: NSObject, HTKLineDrawProtocol {
         guard !configManager.wrList.isEmpty, !model.wrList.isEmpty else {
             return
         }
-        for itemModel in configManager.wrList {
-            let idx = itemModel.index
-            guard idx >= 0,
-                  idx < model.wrList.count,
-                  idx < configManager.targetColorList.count else {
+        for (i, itemModel) in configManager.wrList.enumerated() {
+            guard i < model.wrList.count else {
                 continue
             }
-            let item = model.wrList[idx]
+            let item = model.wrList[i]
             let title = String(format: "WR(%@):%@", item.title, configManager.precision(item.value, -1))
-            let color = configManager.targetColorList[idx]
+            let color = itemModel.color ?? paletteColor(itemModel.index, configManager)
             x += drawText(title: title, point: CGPoint.init(x: x, y: baseY), color: color, font: font, context: context, configManager: configManager)
             x += 5
         }

@@ -155,21 +155,21 @@ public class MainDraw implements IChartDraw<ICandle> {
             for (int i = 0; i < itemSize; i++) {
                 HTKLineTargetItem currentTargetItem = (HTKLineTargetItem) currentItem.maList.get(i);
                 HTKLineTargetItem lastTargetItem = (HTKLineTargetItem) lastItem.maList.get(i);
-                primaryPaint.setColor(overlayColor(view, view.configManager.maList.get(i).index));
+                primaryPaint.setColor(targetItemColor(view, view.configManager.maList.get(i)));
                 view.drawMainLine(canvas, this.primaryPaint, lastX, lastTargetItem.value, curX, currentTargetItem.value);
             }
         } else if (primaryStatus == PrimaryStatus.BOLL) {
             //画boll
             if (lastPoint.getMb() != 0) {
-                primaryPaint.setColor(overlayColor(view, 0));
+                primaryPaint.setColor(view.configManager.indicatorColor("boll", 0, overlayColor(view, 0)));
                 view.drawMainLine(canvas, primaryPaint, lastX, lastPoint.getMb(), curX, curPoint.getMb());
             }
             if (lastPoint.getUp() != 0) {
-                primaryPaint.setColor(overlayColor(view, 1));
+                primaryPaint.setColor(view.configManager.indicatorColor("boll", 1, overlayColor(view, 1)));
                 view.drawMainLine(canvas, primaryPaint, lastX, lastPoint.getUp(), curX, curPoint.getUp());
             }
             if (lastPoint.getDn() != 0) {
-                primaryPaint.setColor(overlayColor(view, 2));
+                primaryPaint.setColor(view.configManager.indicatorColor("boll", 2, overlayColor(view, 2)));
                 view.drawMainLine(canvas, primaryPaint, lastX, lastPoint.getDn(), curX, curPoint.getDn());
             }
         }
@@ -190,6 +190,17 @@ public class MainDraw implements IChartDraw<ICandle> {
         }
         int i = ((index % colors.length) + colors.length) % colors.length;
         return colors[i];
+    }
+
+    /**
+     * Native N6 (0.4.3): a target item's explicit color when JS sent one,
+     * otherwise the item's palette slot — exact user colors in every combo.
+     */
+    private int targetItemColor(BaseKLineChartView view, HTKLineTargetItem item) {
+        if (item == null) {
+            return Color.GRAY;
+        }
+        return item.hasColor ? item.color : overlayColor(view, item.index);
     }
 
     /** Draws a single overlay line segment, skipping non-finite endpoints. */
@@ -229,21 +240,21 @@ public class MainDraw implements IChartDraw<ICandle> {
                 if (c == null || l == null || !isFinite(c.value) || !isFinite(l.value)) {
                     continue;
                 }
-                overlayPaint.setColor(overlayColor(view, i));
+                overlayPaint.setColor(c.hasColor ? c.color : overlayColor(view, i));
                 view.drawMainLine(canvas, overlayPaint, lastX, l.value, curX, c.value);
             }
         }
         if (overlays.contains("boll")) {
             if (isFinite(cur.getMb()) && isFinite(last.getMb()) && last.getMb() != 0) {
-                overlayPaint.setColor(overlayColor(view, 0));
+                overlayPaint.setColor(view.configManager.indicatorColor("boll", 0, overlayColor(view, 0)));
                 view.drawMainLine(canvas, overlayPaint, lastX, last.getMb(), curX, cur.getMb());
             }
             if (isFinite(cur.getUp()) && isFinite(last.getUp()) && last.getUp() != 0) {
-                overlayPaint.setColor(overlayColor(view, 1));
+                overlayPaint.setColor(view.configManager.indicatorColor("boll", 1, overlayColor(view, 1)));
                 view.drawMainLine(canvas, overlayPaint, lastX, last.getUp(), curX, cur.getUp());
             }
             if (isFinite(cur.getDn()) && isFinite(last.getDn()) && last.getDn() != 0) {
-                overlayPaint.setColor(overlayColor(view, 2));
+                overlayPaint.setColor(view.configManager.indicatorColor("boll", 2, overlayColor(view, 2)));
                 view.drawMainLine(canvas, overlayPaint, lastX, last.getDn(), curX, cur.getDn());
             }
         }
@@ -265,11 +276,11 @@ public class MainDraw implements IChartDraw<ICandle> {
                 canvas.drawPath(path, overlayPaint);
                 overlayPaint.setStyle(Paint.Style.STROKE);
             }
-            drawOverlayLine(view, canvas, overlayColor(view, 0), lastX, last.ichiTenkan, curX, cur.ichiTenkan);
-            drawOverlayLine(view, canvas, overlayColor(view, 3), lastX, last.ichiKijun, curX, cur.ichiKijun);
-            drawOverlayLine(view, canvas, overlayColor(view, 4), lastX, last.ichiSpanA, curX, cur.ichiSpanA);
-            drawOverlayLine(view, canvas, overlayColor(view, 5), lastX, last.ichiSpanB, curX, cur.ichiSpanB);
-            drawOverlayLine(view, canvas, overlayColor(view, 1), lastX, last.ichiChikou, curX, cur.ichiChikou);
+            drawOverlayLine(view, canvas, view.configManager.indicatorColor("ichi", 0, overlayColor(view, 0)), lastX, last.ichiTenkan, curX, cur.ichiTenkan);
+            drawOverlayLine(view, canvas, view.configManager.indicatorColor("ichi", 1, overlayColor(view, 3)), lastX, last.ichiKijun, curX, cur.ichiKijun);
+            drawOverlayLine(view, canvas, view.configManager.indicatorColor("ichi", 2, overlayColor(view, 4)), lastX, last.ichiSpanA, curX, cur.ichiSpanA);
+            drawOverlayLine(view, canvas, view.configManager.indicatorColor("ichi", 3, overlayColor(view, 5)), lastX, last.ichiSpanB, curX, cur.ichiSpanB);
+            drawOverlayLine(view, canvas, view.configManager.indicatorColor("ichi", 4, overlayColor(view, 1)), lastX, last.ichiChikou, curX, cur.ichiChikou);
         }
 
         if (overlays.contains("ema") && cur.emaList != null && last.emaList != null) {
@@ -280,142 +291,171 @@ public class MainDraw implements IChartDraw<ICandle> {
                 if (c == null || l == null || !isFinite(c.value) || !isFinite(l.value)) {
                     continue;
                 }
-                overlayPaint.setColor(overlayColor(view, i));
+                overlayPaint.setColor(c.hasColor ? c.color : overlayColor(view, i));
                 view.drawMainLine(canvas, overlayPaint, lastX, l.value, curX, c.value);
             }
         }
         if (overlays.contains("avl") && isFinite(cur.avl) && isFinite(last.avl)) {
-            overlayPaint.setColor(overlayColor(view, 2));
+            overlayPaint.setColor(view.configManager.indicatorColor("avl", 0, overlayColor(view, 2)));
             view.drawMainLine(canvas, overlayPaint, lastX, last.avl, curX, cur.avl);
         }
         if (overlays.contains("vwap") && isFinite(cur.vwap) && isFinite(last.vwap)) {
-            overlayPaint.setColor(overlayColor(view, 1));
+            overlayPaint.setColor(view.configManager.indicatorColor("vwap", 0, overlayColor(view, 1)));
             view.drawMainLine(canvas, overlayPaint, lastX, last.vwap, curX, cur.vwap);
         }
         if (overlays.contains("super") && isFinite(cur.superTrend) && isFinite(last.superTrend)) {
-            overlayPaint.setColor(cur.superTrendUp ? view.configManager.increaseColor : view.configManager.decreaseColor);
+            // Two user colors: indicatorColors.super = [upColor, downColor];
+            // market direction colors remain the fallback for old JS bundles.
+            int superFallback = cur.superTrendUp ? view.configManager.increaseColor : view.configManager.decreaseColor;
+            overlayPaint.setColor(view.configManager.indicatorColor("super", cur.superTrendUp ? 0 : 1, superFallback));
             view.drawMainLine(canvas, overlayPaint, lastX, last.superTrend, curX, cur.superTrend);
         }
         if (overlays.contains("sar") && isFinite(cur.sar)) {
             overlayPaint.setStyle(Paint.Style.FILL);
-            overlayPaint.setColor(overlayColor(view, 3));
+            overlayPaint.setColor(view.configManager.indicatorColor("sar", 0, overlayColor(view, 3)));
             canvas.drawCircle(curX, view.yFromValue(cur.sar), mSarRadius, overlayPaint);
             overlayPaint.setStyle(Paint.Style.STROKE);
         }
-        // Support & Resistance: resistance in the bearish color, support in the
-        // bullish color (step-style levels; NaN segments are skipped).
+        // Support & Resistance: user colors when configured, otherwise the
+        // bearish color for resistance / bullish for support (NaN segments skip).
         if (overlays.contains("resist")) {
-            drawOverlayLine(view, canvas, view.configManager.decreaseColor, lastX, last.resistR, curX, cur.resistR);
-            drawOverlayLine(view, canvas, view.configManager.increaseColor, lastX, last.resistS, curX, cur.resistS);
+            drawOverlayLine(view, canvas, view.configManager.indicatorColor("resist", 0, view.configManager.decreaseColor), lastX, last.resistR, curX, cur.resistR);
+            drawOverlayLine(view, canvas, view.configManager.indicatorColor("resist", 1, view.configManager.increaseColor), lastX, last.resistS, curX, cur.resistS);
         }
+    }
+
+    /** One colored text segment of a header legend line. */
+    private static class LegendSeg {
+        final String text;
+        final int color;
+        LegendSeg(String text, int color) {
+            this.text = text;
+            this.color = color;
+        }
+    }
+
+    private static List<LegendSeg> oneSeg(String text, int color) {
+        List<LegendSeg> row = new ArrayList<>();
+        row.add(new LegendSeg(text, color));
+        return row;
+    }
+
+    /**
+     * Header legend as a list of rows (one row per indicator), each a list of
+     * colored segments. Rendered stacked vertically (see drawText), capped so
+     * many overlapping indicators don't flood the chart.
+     */
+    private List<List<LegendSeg>> buildLegendRows(KLineEntity point, BaseKLineChartView view) {
+        List<List<LegendSeg>> rows = new ArrayList<>();
+        if (point == null) {
+            return rows;
+        }
+
+        // Primary MA / BOLL row.
+        if (primaryStatus == PrimaryStatus.MA && point.maList != null) {
+            int configSize = view.configManager.maList != null ? view.configManager.maList.size() : 0;
+            int itemSize = Math.min(configSize, point.maList.size());
+            List<LegendSeg> row = new ArrayList<>();
+            for (int i = 0; i < itemSize; i++) {
+                HTKLineTargetItem targetItem = (HTKLineTargetItem) point.maList.get(i);
+                row.add(new LegendSeg(
+                        "MA" + targetItem.title + ":" + view.formatValue(targetItem.value),
+                        targetItemColor(view, view.configManager.maList.get(i))));
+            }
+            if (!row.isEmpty()) {
+                rows.add(row);
+            }
+        } else if (primaryStatus == PrimaryStatus.BOLL && point.getMb() != 0) {
+            List<LegendSeg> row = new ArrayList<>();
+            row.add(new LegendSeg("BOLL:" + view.formatValue(point.getMb()),
+                    view.configManager.indicatorColor("boll", 0, overlayColor(view, 0))));
+            row.add(new LegendSeg("UB:" + view.formatValue(point.getUp()),
+                    view.configManager.indicatorColor("boll", 1, overlayColor(view, 1))));
+            row.add(new LegendSeg("LB:" + view.formatValue(point.getDn()),
+                    view.configManager.indicatorColor("boll", 2, overlayColor(view, 2))));
+            rows.add(row);
+        }
+
+        // Overlay rows (each indicator on its own line).
+        List<String> overlays = view.configManager.mainOverlays;
+        if (overlays != null && !overlays.isEmpty()) {
+            if (overlays.contains("ema") && point.emaList != null) {
+                List<LegendSeg> row = new ArrayList<>();
+                for (int i = 0; i < point.emaList.size(); i++) {
+                    HTKLineTargetItem ti = (HTKLineTargetItem) point.emaList.get(i);
+                    if (ti == null || !isFinite(ti.value)) {
+                        continue;
+                    }
+                    row.add(new LegendSeg("EMA" + ti.title + ":" + view.formatValue(ti.value),
+                            ti.hasColor ? ti.color : overlayColor(view, i)));
+                }
+                if (!row.isEmpty()) {
+                    rows.add(row);
+                }
+            }
+            if (overlays.contains("avl") && isFinite(point.avl)) {
+                rows.add(oneSeg("AVL:" + view.formatValue(point.avl),
+                        view.configManager.indicatorColor("avl", 0, overlayColor(view, 2))));
+            }
+            if (overlays.contains("vwap") && isFinite(point.vwap)) {
+                rows.add(oneSeg("VWAP:" + view.formatValue(point.vwap),
+                        view.configManager.indicatorColor("vwap", 0, overlayColor(view, 1))));
+            }
+            if (overlays.contains("super") && isFinite(point.superTrend)) {
+                int superFallback = point.superTrendUp ? view.configManager.increaseColor : view.configManager.decreaseColor;
+                rows.add(oneSeg("SuperTrend:" + view.formatValue(point.superTrend),
+                        view.configManager.indicatorColor("super", point.superTrendUp ? 0 : 1, superFallback)));
+            }
+            if (overlays.contains("sar") && isFinite(point.sar)) {
+                rows.add(oneSeg("SAR:" + view.formatValue(point.sar),
+                        view.configManager.indicatorColor("sar", 0, overlayColor(view, 3))));
+            }
+            if (overlays.contains("resist")) {
+                List<LegendSeg> row = new ArrayList<>();
+                if (isFinite(point.resistR)) {
+                    row.add(new LegendSeg("R:" + view.formatValue(point.resistR),
+                            view.configManager.indicatorColor("resist", 0, view.configManager.decreaseColor)));
+                }
+                if (isFinite(point.resistS)) {
+                    row.add(new LegendSeg("S:" + view.formatValue(point.resistS),
+                            view.configManager.indicatorColor("resist", 1, view.configManager.increaseColor)));
+                }
+                if (!row.isEmpty()) {
+                    rows.add(row);
+                }
+            }
+        }
+        return rows;
     }
 
     @Override
     public void drawText(@NonNull Canvas canvas, @NonNull BaseKLineChartView view, int position, float x, float y) {
-        KLineEntity point = (KLineEntity) view.getItem(position);
-        String text = "";
-        String space = "  ";
         if (view.isMinute) {
-
-        } else {
-            if (primaryStatus == PrimaryStatus.MA) {
-                if (point.maList == null) {
-                    return;
-                }
-                int configSize = view.configManager.maList != null ? view.configManager.maList.size() : 0;
-                int itemSize = Math.min(configSize, point.maList.size());
-                for (int i = 0; i < itemSize; i++) {
-                    HTKLineTargetItem targetItem = (HTKLineTargetItem) point.maList.get(i);
-                    this.primaryPaint.setColor(overlayColor(view, view.configManager.maList.get(i).index));
-                    StringBuilder stringBuilder = new StringBuilder();
-                    stringBuilder.append("MA");
-                    stringBuilder.append(targetItem.title);
-                    stringBuilder.append(":");
-                    stringBuilder.append(view.formatValue(targetItem.value));
-                    stringBuilder.append(space);
-                    text = stringBuilder.toString();
-                    canvas.drawText(text, x, y, this.primaryPaint);
-                    x += this.primaryPaint.measureText(text);
-                }
-            } else if (primaryStatus == PrimaryStatus.BOLL) {
-                if (point.getMb() != 0) {
-                    text = "BOLL:" + view.formatValue(point.getMb()) + space;
-                    this.primaryPaint.setColor(overlayColor(view, 0));
-                    canvas.drawText(text, x, y, primaryPaint);
-                    x += ma5Paint.measureText(text);
-                    text = "UB:" + view.formatValue(point.getUp()) + space;
-                    this.primaryPaint.setColor(overlayColor(view, 1));
-                    canvas.drawText(text, x, y, primaryPaint);
-                    x += ma10Paint.measureText(text);
-                    text = "LB:" + view.formatValue(point.getDn());
-                    this.primaryPaint.setColor(overlayColor(view, 2));
-                    canvas.drawText(text, x, y, primaryPaint);
-                }
-            }
-
-            // Phase 8-B: append overlay legends (guarded; skips absent values).
-            x = drawOverlayLegend(point, view, canvas, x, y, space);
+            return;
         }
-    }
-
-    /** Draws EMA/AVL/VWAP/SuperTrend/SAR header labels; returns the new x cursor. */
-    private float drawOverlayLegend(KLineEntity point, BaseKLineChartView view, Canvas canvas, float x, float y, String space) {
-        List<String> overlays = view.configManager.mainOverlays;
-        if (overlays == null || overlays.isEmpty() || point == null) {
-            return x;
+        KLineEntity point = (KLineEntity) view.getItem(position);
+        List<List<LegendSeg>> rows = buildLegendRows(point, view);
+        if (rows.isEmpty()) {
+            return;
         }
-        String text;
-        if (overlays.contains("ema") && point.emaList != null) {
-            for (int i = 0; i < point.emaList.size(); i++) {
-                HTKLineTargetItem ti = (HTKLineTargetItem) point.emaList.get(i);
-                if (ti == null || !isFinite(ti.value)) {
-                    continue;
-                }
-                this.primaryPaint.setColor(overlayColor(view, i));
-                text = "EMA" + ti.title + ":" + view.formatValue(ti.value) + space;
-                canvas.drawText(text, x, y, this.primaryPaint);
-                x += this.primaryPaint.measureText(text);
+        // Each indicator draws on its own line, stacked vertically; cap the
+        // number of lines so many overlapping indicators can't flood the chart.
+        int maxRows = Math.min(4, rows.size());
+        Paint.FontMetrics fm = primaryPaint.getFontMetrics();
+        float lineHeight = (fm.descent - fm.ascent) + ViewUtil.Dp2Px(mContext, 3);
+        String space = "  ";
+        for (int r = 0; r < maxRows; r++) {
+            float lineX = x;
+            float lineY = y + r * lineHeight;
+            List<LegendSeg> row = rows.get(r);
+            for (int s = 0; s < row.size(); s++) {
+                LegendSeg seg = row.get(s);
+                primaryPaint.setColor(seg.color);
+                String text = seg.text + space;
+                canvas.drawText(text, lineX, lineY, primaryPaint);
+                lineX += primaryPaint.measureText(text);
             }
         }
-        if (overlays.contains("avl") && isFinite(point.avl)) {
-            this.primaryPaint.setColor(overlayColor(view, 2));
-            text = "AVL:" + view.formatValue(point.avl) + space;
-            canvas.drawText(text, x, y, this.primaryPaint);
-            x += this.primaryPaint.measureText(text);
-        }
-        if (overlays.contains("vwap") && isFinite(point.vwap)) {
-            this.primaryPaint.setColor(overlayColor(view, 1));
-            text = "VWAP:" + view.formatValue(point.vwap) + space;
-            canvas.drawText(text, x, y, this.primaryPaint);
-            x += this.primaryPaint.measureText(text);
-        }
-        if (overlays.contains("super") && isFinite(point.superTrend)) {
-            this.primaryPaint.setColor(point.superTrendUp ? view.configManager.increaseColor : view.configManager.decreaseColor);
-            text = "SuperTrend:" + view.formatValue(point.superTrend) + space;
-            canvas.drawText(text, x, y, this.primaryPaint);
-            x += this.primaryPaint.measureText(text);
-        }
-        if (overlays.contains("sar") && isFinite(point.sar)) {
-            this.primaryPaint.setColor(overlayColor(view, 3));
-            text = "SAR:" + view.formatValue(point.sar) + space;
-            canvas.drawText(text, x, y, this.primaryPaint);
-            x += this.primaryPaint.measureText(text);
-        }
-        if (overlays.contains("resist")) {
-            if (isFinite(point.resistR)) {
-                this.primaryPaint.setColor(view.configManager.decreaseColor);
-                text = "R:" + view.formatValue(point.resistR) + space;
-                canvas.drawText(text, x, y, this.primaryPaint);
-                x += this.primaryPaint.measureText(text);
-            }
-            if (isFinite(point.resistS)) {
-                this.primaryPaint.setColor(view.configManager.increaseColor);
-                text = "S:" + view.formatValue(point.resistS) + space;
-                canvas.drawText(text, x, y, this.primaryPaint);
-                x += this.primaryPaint.measureText(text);
-            }
-        }
-        return x;
     }
 
     public float findIsMaxValue(ICandle point, final boolean isMax) {
@@ -593,6 +633,12 @@ public class MainDraw implements IChartDraw<ICandle> {
         if (view.isMinute) {
             return;
         }
+        // Abstract-on-chart "topLayer": summary strip pinned to the chart top
+        // instead of the floating panel.
+        if ("topLayer".equals(view.configManager.hoverInfoMode)) {
+            drawTopLayerAbstract(view, canvas);
+            return;
+        }
         Paint.FontMetrics metrics = mSelectorTextPaint.getFontMetrics();
         float textHeight = metrics.descent - metrics.ascent;
 
@@ -678,6 +724,89 @@ public class MainDraw implements IChartDraw<ICandle> {
             y += textHeight + lineHeight;
         }
 
+    }
+
+    /**
+     * Abstract-on-chart "topLayer" mode: the selected candle's info items flow
+     * left-to-right in a full-width strip pinned to the top of the chart,
+     * wrapping onto extra rows as needed (instead of the floating panel).
+     */
+    private void drawTopLayerAbstract(final BaseKLineChartView view, Canvas canvas) {
+        final KLineEntity point = (KLineEntity) view.getItem(view.getSelectedIndex());
+        if (point == null || point.selectedItemList == null || point.selectedItemList.isEmpty()) {
+            return;
+        }
+        List<Map<String, Object>> itemList = point.selectedItemList;
+
+        mSelectorTextPaint.setTextSize(view.configManager.panelTextFontSize);
+        Paint.FontMetrics metrics = mSelectorTextPaint.getFontMetrics();
+        float textHeight = metrics.descent - metrics.ascent;
+        float baseLine = (textHeight - metrics.bottom - metrics.top) / 2;
+
+        float padH = ViewUtil.Dp2Px(mContext, 10);
+        float padV = ViewUtil.Dp2Px(mContext, 6);
+        float itemGap = ViewUtil.Dp2Px(mContext, 12);
+        float titleGap = ViewUtil.Dp2Px(mContext, 4);
+        float rowGap = ViewUtil.Dp2Px(mContext, 4);
+        float chartWidth = view.getChartWidth();
+        float maxX = chartWidth - padH;
+
+        // Measure pass: how many rows does the flow layout need?
+        int rows = 1;
+        float x = padH;
+        for (Map<String, Object> map : itemList) {
+            String title = (String) map.get("title");
+            String detail = (String) map.get("detail");
+            float w = mSelectorTextPaint.measureText(title == null ? "" : title)
+                    + titleGap
+                    + mSelectorTextPaint.measureText(detail == null ? "" : detail);
+            if (x + w > maxX && x > padH) {
+                rows++;
+                x = padH;
+            }
+            x += w + itemGap;
+        }
+        float stripHeight = padV * 2 + rows * textHeight + (rows - 1) * rowGap;
+
+        // Full-width strip background + bottom hairline, pinned to the top.
+        RectF strip = new RectF(0, 0, chartWidth, stripHeight);
+        mSelectorBackgroundPaint.setStyle(Paint.Style.FILL);
+        mSelectorBackgroundPaint.setColor(view.configManager.panelBackgroundColor);
+        canvas.drawRect(strip, mSelectorBackgroundPaint);
+        mSelectorBackgroundPaint.setStyle(Paint.Style.STROKE);
+        mSelectorBackgroundPaint.setStrokeWidth(1);
+        mSelectorBackgroundPaint.setColor(view.configManager.panelBorderColor);
+        canvas.drawLine(0, stripHeight, chartWidth, stripHeight, mSelectorBackgroundPaint);
+
+        // Draw pass.
+        x = padH;
+        float y = padV + baseLine;
+        for (Map<String, Object> map : itemList) {
+            String title = (String) map.get("title");
+            String detail = (String) map.get("detail");
+            if (title == null) {
+                title = "";
+            }
+            if (detail == null) {
+                detail = "";
+            }
+            float titleWidth = mSelectorTextPaint.measureText(title);
+            float detailWidth = mSelectorTextPaint.measureText(detail);
+            float w = titleWidth + titleGap + detailWidth;
+            if (x + w > maxX && x > padH) {
+                x = padH;
+                y += textHeight + rowGap;
+            }
+            mSelectorTextPaint.setColor(view.configManager.textColor);
+            canvas.drawText(title, x, y, mSelectorTextPaint);
+            int detailColor = view.configManager.candleTextColor;
+            if (map.get("color") != null) {
+                detailColor = ((Number) map.get("color")).intValue();
+            }
+            mSelectorTextPaint.setColor(detailColor);
+            canvas.drawText(detail, x + titleWidth + titleGap, y, mSelectorTextPaint);
+            x += w + itemGap;
+        }
     }
 
     /**

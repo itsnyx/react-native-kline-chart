@@ -53,9 +53,11 @@ public class RSIDraw implements IChartDraw<IRSI> {
         for (int i = 0; i < loopSize; i++) {
             HTKLineTargetItem currentTargetItem = (HTKLineTargetItem) currentItem.rsiList.get(i);
             HTKLineTargetItem lastTargetItem = (HTKLineTargetItem) lastItem.rsiList.get(i);
-            int colorIndex = view.configManager.rsiList.get(i).index;
-            if (colorIndex >= 0 && colorIndex < view.configManager.targetColorList.length) {
-                primaryPaint.setColor(view.configManager.targetColorList[colorIndex]);
+            HTKLineTargetItem configItem = view.configManager.rsiList.get(i);
+            if (configItem.hasColor) {
+                primaryPaint.setColor(configItem.color);
+            } else if (configItem.index >= 0 && configItem.index < view.configManager.targetColorList.length) {
+                primaryPaint.setColor(view.configManager.targetColorList[configItem.index]);
             }
             view.drawChildLine(canvas, primaryPaint, lastX, lastTargetItem.value, curX, currentTargetItem.value);
         }
@@ -73,9 +75,11 @@ public class RSIDraw implements IChartDraw<IRSI> {
         String text = "";
         for (int i = 0; i < loopSize; i++) {
             HTKLineTargetItem targetItem = (HTKLineTargetItem) point.rsiList.get(i);
-            int colorIndex = view.configManager.rsiList.get(i).index;
-            if (colorIndex >= 0 && colorIndex < view.configManager.targetColorList.length) {
-                this.primaryPaint.setColor(view.configManager.targetColorList[colorIndex]);
+            HTKLineTargetItem configItem = view.configManager.rsiList.get(i);
+            if (configItem.hasColor) {
+                this.primaryPaint.setColor(configItem.color);
+            } else if (configItem.index >= 0 && configItem.index < view.configManager.targetColorList.length) {
+                this.primaryPaint.setColor(view.configManager.targetColorList[configItem.index]);
             }
             StringBuilder stringBuilder = new StringBuilder();
             stringBuilder.append("RSI(");

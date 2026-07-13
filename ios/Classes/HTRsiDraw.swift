@@ -10,6 +10,16 @@ import UIKit
 
 class HTRsiDraw: NSObject, HTKLineDrawProtocol {
 
+    /** Color from the shared palette, wrapping the index; gray if palette empty. */
+    private func paletteColor(_ i: Int, _ configManager: HTKLineConfigManager) -> UIColor {
+        let list = configManager.targetColorList
+        if list.isEmpty {
+            return UIColor.gray
+        }
+        let idx = ((i % list.count) + list.count) % list.count
+        return list[idx]
+    }
+
     func minMaxRange(_ visibleModelArray: [HTKLineModel], _ configManager: HTKLineConfigManager) -> Range<CGFloat> {
         var maxValue = CGFloat.leastNormalMagnitude
         var minValue = CGFloat.greatestFiniteMagnitude
@@ -38,18 +48,17 @@ class HTRsiDraw: NSObject, HTKLineDrawProtocol {
             return
         }
 
-        for itemModel in configManager.rsiList {
-            let idx = itemModel.index
-            guard idx >= 0,
-                  idx < model.rsiList.count,
-                  idx < lastModel.rsiList.count,
-                  idx < configManager.targetColorList.count else {
+        // Iterate positionally: `itemModel.index` is a color slot (it can point
+        // past the per-candle list into the extended palette), never a data index.
+        for (i, itemModel) in configManager.rsiList.enumerated() {
+            guard i < model.rsiList.count,
+                  i < lastModel.rsiList.count else {
                 continue
             }
-            let color = configManager.targetColorList[idx]
+            let color = itemModel.color ?? paletteColor(itemModel.index, configManager)
             drawLine(
-                value: model.rsiList[idx].value,
-                lastValue: lastModel.rsiList[idx].value,
+                value: model.rsiList[i].value,
+                lastValue: lastModel.rsiList[i].value,
                 maxValue: maxValue,
                 minValue: minValue,
                 baseY: baseY,
@@ -70,16 +79,13 @@ class HTRsiDraw: NSObject, HTKLineDrawProtocol {
         guard !configManager.rsiList.isEmpty, !model.rsiList.isEmpty else {
             return
         }
-        for itemModel in configManager.rsiList {
-            let idx = itemModel.index
-            guard idx >= 0,
-                  idx < model.rsiList.count,
-                  idx < configManager.targetColorList.count else {
+        for (i, itemModel) in configManager.rsiList.enumerated() {
+            guard i < model.rsiList.count else {
                 continue
             }
-            let item = model.rsiList[idx]
+            let item = model.rsiList[i]
             let title = String(format: "RSI(%@):%@", item.title, configManager.precision(item.value, -1))
-            let color = configManager.targetColorList[idx]
+            let color = itemModel.color ?? paletteColor(itemModel.index, configManager)
             x += drawText(title: title, point: CGPoint.init(x: x, y: baseY), color: color, font: font, context: context, configManager: configManager)
             x += 5
         }

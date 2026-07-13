@@ -87,6 +87,9 @@ public class HTKLineContainerView extends RelativeLayout {
         }
         klineView.changeMainDrawType(klineView.configManager.primaryStatus);
         klineView.changeSecondDrawType(klineView.configManager.secondStatus);
+        // Native N7: build the stacked sub-panel list (falls back to the single
+        // secondStatus panel above when secondList is empty / old JS bundle).
+        klineView.applySecondList();
         klineView.setMainDrawLine(klineView.configManager.isMinute);
         klineView.setPointWidth(klineView.configManager.itemWidth);
         klineView.setCandleWidth(klineView.configManager.candleWidth);

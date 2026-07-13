@@ -10,6 +10,16 @@ import UIKit
 
 class HTVolumeDraw: NSObject, HTKLineDrawProtocol {
 
+    /** Color from the shared palette, wrapping the index; gray if palette empty. */
+    private func paletteColor(_ i: Int, _ configManager: HTKLineConfigManager) -> UIColor {
+        let list = configManager.targetColorList
+        if list.isEmpty {
+            return UIColor.gray
+        }
+        let idx = ((i % list.count) + list.count) % list.count
+        return list[idx]
+    }
+
     func minMaxRange(_ visibleModelArray: [HTKLineModel], _ configManager: HTKLineConfigManager) -> Range<CGFloat> {
         var maxValue = CGFloat.leastNormalMagnitude
         var minValue = CGFloat.greatestFiniteMagnitude
@@ -47,16 +57,15 @@ class HTVolumeDraw: NSObject, HTKLineDrawProtocol {
                   !lastModel.maVolumeList.isEmpty else {
                 return
             }
-            for itemModel in configManager.maVolumeList {
-                let idx = itemModel.index
-                guard idx >= 0,
-                      idx < model.maVolumeList.count,
-                      idx < lastModel.maVolumeList.count,
-                      idx < configManager.targetColorList.count else {
+            // Iterate positionally: `itemModel.index` is a color slot (it can point
+            // past the per-candle list into the extended palette), never a data index.
+            for (i, itemModel) in configManager.maVolumeList.enumerated() {
+                guard i < model.maVolumeList.count,
+                      i < lastModel.maVolumeList.count else {
                     continue
                 }
-                let color = configManager.targetColorList[idx]
-                drawLine(value: model.maVolumeList[idx].value, lastValue: lastModel.maVolumeList[idx].value, maxValue: maxValue, minValue: minValue, baseY: baseY, height: height, index: index, lastIndex: lastIndex, color: color, isBezier: false, context: context, configManager: configManager)
+                let color = itemModel.color ?? paletteColor(itemModel.index, configManager)
+                drawLine(value: model.maVolumeList[i].value, lastValue: lastModel.maVolumeList[i].value, maxValue: maxValue, minValue: minValue, baseY: baseY, height: height, index: index, lastIndex: lastIndex, color: color, isBezier: false, context: context, configManager: configManager)
             }
         }
     }
@@ -70,16 +79,13 @@ class HTVolumeDraw: NSObject, HTKLineDrawProtocol {
         guard !configManager.maVolumeList.isEmpty, !model.maVolumeList.isEmpty else {
             return
         }
-        for itemModel in configManager.maVolumeList {
-            let idx = itemModel.index
-            guard idx >= 0,
-                  idx < model.maVolumeList.count,
-                  idx < configManager.targetColorList.count else {
+        for (i, itemModel) in configManager.maVolumeList.enumerated() {
+            guard i < model.maVolumeList.count else {
                 continue
             }
-            let item = model.maVolumeList[idx]
+            let item = model.maVolumeList[i]
             let title = String(format: "MA%@:%@", item.title, configManager.precision(item.value, configManager.volume))
-            let color = configManager.targetColorList[idx]
+            let color = itemModel.color ?? paletteColor(itemModel.index, configManager)
             x += drawText(title: title, point: CGPoint.init(x: x, y: baseY), color: color, font: font, context: context, configManager: configManager)
             x += 5
         }

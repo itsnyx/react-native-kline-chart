@@ -168,19 +168,19 @@ class HTMainDraw: NSObject, HTKLineDrawProtocol {
                 for (i, itemModel) in configManager.maList.enumerated() {
                     guard i >= 0,
                           i < model.maList.count,
-                          i < lastModel.maList.count,
-                          itemModel.index >= 0,
-                          itemModel.index < configManager.targetColorList.count else {
+                          i < lastModel.maList.count else {
                         continue
                     }
-                    let color = configManager.targetColorList[itemModel.index]
+                    // Native N6: explicit per-line color wins; the palette slot
+                    // (safely wrapped) stays as the fallback for old JS bundles.
+                    let color = itemModel.color ?? overlayColor(itemModel.index, configManager)
                     drawLine(value: model.maList[i].value, lastValue: lastModel.maList[i].value, maxValue: maxValue, minValue: minValue, baseY: baseY, height: height, index: index, lastIndex: lastIndex, color: color, isBezier: false, context: context, configManager: configManager)
                 }
             case .boll:
                 let itemList = [
-                    ["value": model.bollMb, "lastValue": lastModel.bollMb, "color": configManager.targetColorList[0]],
-                    ["value": model.bollUp, "lastValue": lastModel.bollUp, "color": configManager.targetColorList[1]],
-                    ["value": model.bollDn, "lastValue": lastModel.bollDn, "color": configManager.targetColorList[2]],
+                    ["value": model.bollMb, "lastValue": lastModel.bollMb, "color": configManager.indicatorColor("boll", 0, overlayColor(0, configManager))],
+                    ["value": model.bollUp, "lastValue": lastModel.bollUp, "color": configManager.indicatorColor("boll", 1, overlayColor(1, configManager))],
+                    ["value": model.bollDn, "lastValue": lastModel.bollDn, "color": configManager.indicatorColor("boll", 2, overlayColor(2, configManager))],
                 ]
                 for item in itemList {
                     drawLine(value: item["value"] as? CGFloat ?? 0, lastValue: item["lastValue"] as? CGFloat ?? 0, maxValue: maxValue, minValue: minValue, baseY: baseY, height: height, index: index, lastIndex: lastIndex, color: item["color"] as? UIColor ?? UIColor.orange, isBezier: false, context: context, configManager: configManager)
@@ -218,22 +218,23 @@ class HTMainDraw: NSObject, HTKLineDrawProtocol {
             let n = min(model.maList.count, lastModel.maList.count)
             if n > 0 {
                 for i in 0..<n {
-                    let v = model.maList[i].value
+                    let item = model.maList[i]
+                    let v = item.value
                     let lv = lastModel.maList[i].value
                     if !v.isFinite || !lv.isFinite { continue }
-                    drawLine(value: v, lastValue: lv, maxValue: maxValue, minValue: minValue, baseY: baseY, height: height, index: index, lastIndex: lastIndex, color: overlayColor(i, configManager), isBezier: false, context: context, configManager: configManager)
+                    drawLine(value: v, lastValue: lv, maxValue: maxValue, minValue: minValue, baseY: baseY, height: height, index: index, lastIndex: lastIndex, color: item.color ?? overlayColor(i, configManager), isBezier: false, context: context, configManager: configManager)
                 }
             }
         }
         if overlays.contains("boll") {
             if model.bollMb.isFinite, lastModel.bollMb != 0 {
-                drawLine(value: model.bollMb, lastValue: lastModel.bollMb, maxValue: maxValue, minValue: minValue, baseY: baseY, height: height, index: index, lastIndex: lastIndex, color: overlayColor(0, configManager), isBezier: false, context: context, configManager: configManager)
+                drawLine(value: model.bollMb, lastValue: lastModel.bollMb, maxValue: maxValue, minValue: minValue, baseY: baseY, height: height, index: index, lastIndex: lastIndex, color: configManager.indicatorColor("boll", 0, overlayColor(0, configManager)), isBezier: false, context: context, configManager: configManager)
             }
             if model.bollUp.isFinite, lastModel.bollUp != 0 {
-                drawLine(value: model.bollUp, lastValue: lastModel.bollUp, maxValue: maxValue, minValue: minValue, baseY: baseY, height: height, index: index, lastIndex: lastIndex, color: overlayColor(1, configManager), isBezier: false, context: context, configManager: configManager)
+                drawLine(value: model.bollUp, lastValue: lastModel.bollUp, maxValue: maxValue, minValue: minValue, baseY: baseY, height: height, index: index, lastIndex: lastIndex, color: configManager.indicatorColor("boll", 1, overlayColor(1, configManager)), isBezier: false, context: context, configManager: configManager)
             }
             if model.bollDn.isFinite, lastModel.bollDn != 0 {
-                drawLine(value: model.bollDn, lastValue: lastModel.bollDn, maxValue: maxValue, minValue: minValue, baseY: baseY, height: height, index: index, lastIndex: lastIndex, color: overlayColor(2, configManager), isBezier: false, context: context, configManager: configManager)
+                drawLine(value: model.bollDn, lastValue: lastModel.bollDn, maxValue: maxValue, minValue: minValue, baseY: baseY, height: height, index: index, lastIndex: lastIndex, color: configManager.indicatorColor("boll", 2, overlayColor(2, configManager)), isBezier: false, context: context, configManager: configManager)
             }
         }
         if overlays.contains("ichi") {
@@ -256,34 +257,37 @@ class HTMainDraw: NSObject, HTKLineDrawProtocol {
                 context.closePath()
                 context.fillPath()
             }
-            drawIchiLine(model.ichiTenkan, lastModel.ichiTenkan, overlayColor(0, configManager), maxValue, minValue, baseY, height, index, lastIndex, context, configManager)
-            drawIchiLine(model.ichiKijun, lastModel.ichiKijun, overlayColor(3, configManager), maxValue, minValue, baseY, height, index, lastIndex, context, configManager)
-            drawIchiLine(model.ichiSpanA, lastModel.ichiSpanA, overlayColor(4, configManager), maxValue, minValue, baseY, height, index, lastIndex, context, configManager)
-            drawIchiLine(model.ichiSpanB, lastModel.ichiSpanB, overlayColor(5, configManager), maxValue, minValue, baseY, height, index, lastIndex, context, configManager)
-            drawIchiLine(model.ichiChikou, lastModel.ichiChikou, overlayColor(1, configManager), maxValue, minValue, baseY, height, index, lastIndex, context, configManager)
+            drawIchiLine(model.ichiTenkan, lastModel.ichiTenkan, configManager.indicatorColor("ichi", 0, overlayColor(0, configManager)), maxValue, minValue, baseY, height, index, lastIndex, context, configManager)
+            drawIchiLine(model.ichiKijun, lastModel.ichiKijun, configManager.indicatorColor("ichi", 1, overlayColor(3, configManager)), maxValue, minValue, baseY, height, index, lastIndex, context, configManager)
+            drawIchiLine(model.ichiSpanA, lastModel.ichiSpanA, configManager.indicatorColor("ichi", 2, overlayColor(4, configManager)), maxValue, minValue, baseY, height, index, lastIndex, context, configManager)
+            drawIchiLine(model.ichiSpanB, lastModel.ichiSpanB, configManager.indicatorColor("ichi", 3, overlayColor(5, configManager)), maxValue, minValue, baseY, height, index, lastIndex, context, configManager)
+            drawIchiLine(model.ichiChikou, lastModel.ichiChikou, configManager.indicatorColor("ichi", 4, overlayColor(1, configManager)), maxValue, minValue, baseY, height, index, lastIndex, context, configManager)
         }
         if overlays.contains("ema") {
             let n = min(model.emaList.count, lastModel.emaList.count)
             if n > 0 {
                 for i in 0..<n {
-                    let v = model.emaList[i].value
+                    let item = model.emaList[i]
+                    let v = item.value
                     let lv = lastModel.emaList[i].value
                     if !v.isFinite || !lv.isFinite {
                         continue
                     }
-                    drawLine(value: v, lastValue: lv, maxValue: maxValue, minValue: minValue, baseY: baseY, height: height, index: index, lastIndex: lastIndex, color: overlayColor(i, configManager), isBezier: false, context: context, configManager: configManager)
+                    drawLine(value: v, lastValue: lv, maxValue: maxValue, minValue: minValue, baseY: baseY, height: height, index: index, lastIndex: lastIndex, color: item.color ?? overlayColor(i, configManager), isBezier: false, context: context, configManager: configManager)
                 }
             }
         }
         if overlays.contains("avl"), model.avl.isFinite, lastModel.avl.isFinite {
-            drawLine(value: model.avl, lastValue: lastModel.avl, maxValue: maxValue, minValue: minValue, baseY: baseY, height: height, index: index, lastIndex: lastIndex, color: overlayColor(2, configManager), isBezier: false, context: context, configManager: configManager)
+            drawLine(value: model.avl, lastValue: lastModel.avl, maxValue: maxValue, minValue: minValue, baseY: baseY, height: height, index: index, lastIndex: lastIndex, color: configManager.indicatorColor("avl", 0, overlayColor(2, configManager)), isBezier: false, context: context, configManager: configManager)
         }
         if overlays.contains("vwap"), model.vwap.isFinite, lastModel.vwap.isFinite {
-            drawLine(value: model.vwap, lastValue: lastModel.vwap, maxValue: maxValue, minValue: minValue, baseY: baseY, height: height, index: index, lastIndex: lastIndex, color: overlayColor(1, configManager), isBezier: false, context: context, configManager: configManager)
+            drawLine(value: model.vwap, lastValue: lastModel.vwap, maxValue: maxValue, minValue: minValue, baseY: baseY, height: height, index: index, lastIndex: lastIndex, color: configManager.indicatorColor("vwap", 0, overlayColor(1, configManager)), isBezier: false, context: context, configManager: configManager)
         }
         if overlays.contains("super"), model.superTrend.isFinite, lastModel.superTrend.isFinite {
-            let color = model.superTrendUp ? configManager.increaseColor : configManager.decreaseColor
-            drawLine(value: model.superTrend, lastValue: lastModel.superTrend, maxValue: maxValue, minValue: minValue, baseY: baseY, height: height, index: index, lastIndex: lastIndex, color: color, isBezier: false, context: context, configManager: configManager)
+            // Two user colors: indicatorColors.super = [upColor, downColor];
+            // market direction colors remain the fallback for old JS bundles.
+            let superFallback = model.superTrendUp ? configManager.increaseColor : configManager.decreaseColor
+            drawLine(value: model.superTrend, lastValue: lastModel.superTrend, maxValue: maxValue, minValue: minValue, baseY: baseY, height: height, index: index, lastIndex: lastIndex, color: configManager.indicatorColor("super", model.superTrendUp ? 0 : 1, superFallback), isBezier: false, context: context, configManager: configManager)
         }
         if overlays.contains("sar"), model.sar.isFinite {
             let itemWidth = configManager.itemWidth
@@ -294,17 +298,17 @@ class HTMainDraw: NSObject, HTKLineDrawProtocol {
             let x = CGFloat(index) * itemWidth + paddingHorizontal
             let y = baseY + (maxValue - model.sar) / scale
             let r: CGFloat = 2.0
-            context.setFillColor(overlayColor(3, configManager).cgColor)
+            context.setFillColor(configManager.indicatorColor("sar", 0, overlayColor(3, configManager)).cgColor)
             context.fillEllipse(in: CGRect(x: x - r, y: y - r, width: 2 * r, height: 2 * r))
         }
-        // Support & Resistance: resistance in the bearish color, support in the
-        // bullish color (step-style levels; non-finite segments are skipped).
+        // Support & Resistance: user colors when configured, otherwise the
+        // bearish color for resistance / bullish for support (non-finite skips).
         if overlays.contains("resist") {
             if model.resistR.isFinite, lastModel.resistR.isFinite {
-                drawLine(value: model.resistR, lastValue: lastModel.resistR, maxValue: maxValue, minValue: minValue, baseY: baseY, height: height, index: index, lastIndex: lastIndex, color: configManager.decreaseColor, isBezier: false, context: context, configManager: configManager)
+                drawLine(value: model.resistR, lastValue: lastModel.resistR, maxValue: maxValue, minValue: minValue, baseY: baseY, height: height, index: index, lastIndex: lastIndex, color: configManager.indicatorColor("resist", 0, configManager.decreaseColor), isBezier: false, context: context, configManager: configManager)
             }
             if model.resistS.isFinite, lastModel.resistS.isFinite {
-                drawLine(value: model.resistS, lastValue: lastModel.resistS, maxValue: maxValue, minValue: minValue, baseY: baseY, height: height, index: index, lastIndex: lastIndex, color: configManager.increaseColor, isBezier: false, context: context, configManager: configManager)
+                drawLine(value: model.resistS, lastValue: lastModel.resistS, maxValue: maxValue, minValue: minValue, baseY: baseY, height: height, index: index, lastIndex: lastIndex, color: configManager.indicatorColor("resist", 1, configManager.increaseColor), isBezier: false, context: context, configManager: configManager)
             }
         }
     }
@@ -317,99 +321,105 @@ class HTMainDraw: NSObject, HTKLineDrawProtocol {
         drawLine(value: value, lastValue: lastValue, maxValue: maxValue, minValue: minValue, baseY: baseY, height: height, index: index, lastIndex: lastIndex, color: color, isBezier: false, context: context, configManager: configManager)
     }
 
-    func drawText(_ model: HTKLineModel, _ baseX: CGFloat, _ baseY: CGFloat, _ context: CGContext, _ configManager: HTKLineConfigManager) {
-        if (configManager.isMinute) {
+    /**
+     * Header legend as rows (one row per indicator), each a list of colored
+     * segments. Rendered stacked vertically (see drawText), capped at 4 lines
+     * so many overlapping indicators don't flood the chart.
+     */
+    func buildLegendRows(_ model: HTKLineModel, _ configManager: HTKLineConfigManager) -> [[(String, UIColor)]] {
+        var rows: [[(String, UIColor)]] = []
 
-        } else {
-            var x = baseX
-            switch configManager.mainType {
-            case .none:
-                break
-            case .ma:
-                for (i, itemModel) in configManager.maList.enumerated() {
-                    guard i >= 0,
-                          i < model.maList.count,
-                          itemModel.index >= 0,
-                          itemModel.index < configManager.targetColorList.count else {
-                        continue
-                    }
-                    let item = model.maList[i]
-                    let title = String(format: "MA%@:%@", item.title, configManager.precision(item.value, configManager.price))
-                    let color = configManager.targetColorList[itemModel.index]
-                    let font = configManager.createFont(configManager.headerTextFontSize)
-                    x += drawText(title: title, point: CGPoint.init(x: x, y: baseY), color: color, font: font, context: context, configManager: configManager)
-                    x += 5
-                }
-            case .boll:
-                let itemList = [
-                    ["title": String(format: "BOLL:%@", configManager.precision(model.bollMb, configManager.price)), "color": configManager.targetColorList[0]],
-                    ["title": String(format: "UB:%@", configManager.precision(model.bollUp, configManager.price)), "color": configManager.targetColorList[1]],
-                    ["title": String(format: "LB:%@", configManager.precision(model.bollDn, configManager.price)), "color": configManager.targetColorList[2]],
-                ]
-                let font = configManager.createFont(configManager.headerTextFontSize)
-                for item in itemList {
-                    x += drawText(title: item["title"] as? String ?? "", point: CGPoint.init(x: x, y: baseY), color: item["color"] as? UIColor ?? UIColor.orange, font: font, context: context, configManager: configManager)
-                    x += 5
-                }
-            }
-
-            // Phase 8-B: append overlay legends after the primary indicator.
-            x = drawOverlayLegend(model, x, baseY, context, configManager)
-        }
-    }
-
-    /** Draws EMA/AVL/VWAP/SuperTrend/SAR header labels; returns the new x. */
-    func drawOverlayLegend(_ model: HTKLineModel, _ startX: CGFloat, _ baseY: CGFloat, _ context: CGContext, _ configManager: HTKLineConfigManager) -> CGFloat {
-        let overlays = configManager.mainOverlays
-        if overlays.isEmpty {
-            return startX
-        }
-        var x = startX
-        let font = configManager.createFont(configManager.headerTextFontSize)
-        if overlays.contains("ema") {
-            for (i, item) in model.emaList.enumerated() {
-                if !item.value.isFinite {
+        // Primary MA / BOLL row.
+        switch configManager.mainType {
+        case .none:
+            break
+        case .ma:
+            var row: [(String, UIColor)] = []
+            for (i, itemModel) in configManager.maList.enumerated() {
+                guard i >= 0, i < model.maList.count else {
                     continue
                 }
-                let title = String(format: "EMA%@:%@", item.title, configManager.precision(item.value, configManager.price))
-                x += drawText(title: title, point: CGPoint.init(x: x, y: baseY), color: overlayColor(i, configManager), font: font, context: context, configManager: configManager)
+                let item = model.maList[i]
+                let title = String(format: "MA%@:%@", item.title, configManager.precision(item.value, configManager.price))
+                row.append((title, itemModel.color ?? overlayColor(itemModel.index, configManager)))
+            }
+            if !row.isEmpty {
+                rows.append(row)
+            }
+        case .boll:
+            rows.append([
+                (String(format: "BOLL:%@", configManager.precision(model.bollMb, configManager.price)), configManager.indicatorColor("boll", 0, overlayColor(0, configManager))),
+                (String(format: "UB:%@", configManager.precision(model.bollUp, configManager.price)), configManager.indicatorColor("boll", 1, overlayColor(1, configManager))),
+                (String(format: "LB:%@", configManager.precision(model.bollDn, configManager.price)), configManager.indicatorColor("boll", 2, overlayColor(2, configManager))),
+            ])
+        }
+
+        // Overlay rows (each indicator on its own line).
+        let overlays = configManager.mainOverlays
+        if !overlays.isEmpty {
+            if overlays.contains("ema") {
+                var row: [(String, UIColor)] = []
+                for (i, item) in model.emaList.enumerated() {
+                    if !item.value.isFinite {
+                        continue
+                    }
+                    let title = String(format: "EMA%@:%@", item.title, configManager.precision(item.value, configManager.price))
+                    row.append((title, item.color ?? overlayColor(i, configManager)))
+                }
+                if !row.isEmpty {
+                    rows.append(row)
+                }
+            }
+            if overlays.contains("avl"), model.avl.isFinite {
+                rows.append([(String(format: "AVL:%@", configManager.precision(model.avl, configManager.price)), configManager.indicatorColor("avl", 0, overlayColor(2, configManager)))])
+            }
+            if overlays.contains("vwap"), model.vwap.isFinite {
+                rows.append([(String(format: "VWAP:%@", configManager.precision(model.vwap, configManager.price)), configManager.indicatorColor("vwap", 0, overlayColor(1, configManager)))])
+            }
+            if overlays.contains("super"), model.superTrend.isFinite {
+                let superFallback = model.superTrendUp ? configManager.increaseColor : configManager.decreaseColor
+                rows.append([(String(format: "SuperTrend:%@", configManager.precision(model.superTrend, configManager.price)), configManager.indicatorColor("super", model.superTrendUp ? 0 : 1, superFallback))])
+            }
+            if overlays.contains("sar"), model.sar.isFinite {
+                rows.append([(String(format: "SAR:%@", configManager.precision(model.sar, configManager.price)), configManager.indicatorColor("sar", 0, overlayColor(3, configManager)))])
+            }
+            if overlays.contains("resist") {
+                var row: [(String, UIColor)] = []
+                if model.resistR.isFinite {
+                    row.append((String(format: "R:%@", configManager.precision(model.resistR, configManager.price)), configManager.indicatorColor("resist", 0, configManager.decreaseColor)))
+                }
+                if model.resistS.isFinite {
+                    row.append((String(format: "S:%@", configManager.precision(model.resistS, configManager.price)), configManager.indicatorColor("resist", 1, configManager.increaseColor)))
+                }
+                if !row.isEmpty {
+                    rows.append(row)
+                }
+            }
+        }
+        return rows
+    }
+
+    func drawText(_ model: HTKLineModel, _ baseX: CGFloat, _ baseY: CGFloat, _ context: CGContext, _ configManager: HTKLineConfigManager) {
+        if configManager.isMinute {
+            return
+        }
+        let rows = buildLegendRows(model, configManager)
+        if rows.isEmpty {
+            return
+        }
+        // Each indicator draws on its own line, stacked vertically; cap the
+        // number of lines so many overlapping indicators can't flood the chart.
+        let font = configManager.createFont(configManager.headerTextFontSize)
+        let maxRows = min(4, rows.count)
+        let lineHeight = textHeight(font: font) + 3
+        for r in 0..<maxRows {
+            var x = baseX
+            let y = baseY + CGFloat(r) * lineHeight
+            for seg in rows[r] {
+                x += drawText(title: seg.0, point: CGPoint(x: x, y: y), color: seg.1, font: font, context: context, configManager: configManager)
                 x += 5
             }
         }
-        if overlays.contains("avl"), model.avl.isFinite {
-            let title = String(format: "AVL:%@", configManager.precision(model.avl, configManager.price))
-            x += drawText(title: title, point: CGPoint.init(x: x, y: baseY), color: overlayColor(2, configManager), font: font, context: context, configManager: configManager)
-            x += 5
-        }
-        if overlays.contains("vwap"), model.vwap.isFinite {
-            let title = String(format: "VWAP:%@", configManager.precision(model.vwap, configManager.price))
-            x += drawText(title: title, point: CGPoint.init(x: x, y: baseY), color: overlayColor(1, configManager), font: font, context: context, configManager: configManager)
-            x += 5
-        }
-        if overlays.contains("super"), model.superTrend.isFinite {
-            let color = model.superTrendUp ? configManager.increaseColor : configManager.decreaseColor
-            let title = String(format: "SuperTrend:%@", configManager.precision(model.superTrend, configManager.price))
-            x += drawText(title: title, point: CGPoint.init(x: x, y: baseY), color: color, font: font, context: context, configManager: configManager)
-            x += 5
-        }
-        if overlays.contains("sar"), model.sar.isFinite {
-            let title = String(format: "SAR:%@", configManager.precision(model.sar, configManager.price))
-            x += drawText(title: title, point: CGPoint.init(x: x, y: baseY), color: overlayColor(3, configManager), font: font, context: context, configManager: configManager)
-            x += 5
-        }
-        if overlays.contains("resist") {
-            if model.resistR.isFinite {
-                let title = String(format: "R:%@", configManager.precision(model.resistR, configManager.price))
-                x += drawText(title: title, point: CGPoint.init(x: x, y: baseY), color: configManager.decreaseColor, font: font, context: context, configManager: configManager)
-                x += 5
-            }
-            if model.resistS.isFinite {
-                let title = String(format: "S:%@", configManager.precision(model.resistS, configManager.price))
-                x += drawText(title: title, point: CGPoint.init(x: x, y: baseY), color: configManager.increaseColor, font: font, context: context, configManager: configManager)
-                x += 5
-            }
-        }
-        return x
     }
 
     func drawValue(_ maxValue: CGFloat, _ minValue: CGFloat, _ baseX: CGFloat, _ baseY: CGFloat, _ height: CGFloat, _ context: CGContext, _ configManager: HTKLineConfigManager) {

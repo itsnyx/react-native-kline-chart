@@ -161,6 +161,23 @@ public abstract class BaseKLineChartView extends ScrollAndScaleView implements D
     private IChartDraw mChildDraw;
     private List<IChartDraw> mChildDraws = new ArrayList<>();
 
+    // Native N7: stacked sub-panels. mActiveChildDraws holds one draw per panel
+    // (top→bottom), each with its own rect / min / max / scale. During drawing
+    // the single mChildDraw/mChildRect/mChildMaxValue/... fields are rebound to
+    // the current panel so all existing single-panel draw code (getChildY,
+    // drawText, axis, selector) works unchanged.
+    private List<IChartDraw> mActiveChildDraws = new ArrayList<>();
+    private List<Rect> mChildRects = new ArrayList<>();
+    private float[] mChildMaxValues = new float[0];
+    private float[] mChildMinValues = new float[0];
+    private float[] mChildScaleYs = new float[0];
+    // For each active panel: its index among generic-oscillator panels, or -1
+    // if it is a built-in (MACD/KDJ/RSI/WR) panel. Used to pick the right
+    // per-candle subLines from KLineEntity.subLinesList.
+    private int[] mChildGenericIndex = new int[0];
+    private boolean[] mChildIsWR = new boolean[0];
+    private int mCurrentGenericIndex = -1;
+
     private IValueFormatter mValueFormatter;
     private IDateTimeFormatter mDateTimeFormatter;
 
@@ -321,6 +338,37 @@ public abstract class BaseKLineChartView extends ScrollAndScaleView implements D
 
         int allHeight = this.getHeight() - mBottomPadding;
         boolean showVolume = configManager == null || configManager.showVolume;
+
+        // Native N7: stacked fixed-height sub-panels. Each panel (VOL + every
+        // oscillator) is `subPanelHeight` px; the main chart takes the rest. The
+        // RN container is grown by the JS side so the main area stays readable.
+        if (configManager != null && configManager.subPanelHeight > 0 && isMultiPanel()) {
+            int panelPx = (int) configManager.subPanelHeight;
+            int subPanelCount = (showVolume ? 1 : 0) + mActiveChildDraws.size();
+            int mainBottom = allHeight - subPanelCount * panelPx;
+            int minMain = mTopPadding + textHeight + 60;
+            if (mainBottom < minMain) {
+                mainBottom = minMain;
+            }
+            mMainRect = new Rect(0, mTopPadding - textHeight, mWidth, mainBottom - textHeight);
+            int y = mainBottom;
+            if (showVolume) {
+                mVolRect = new Rect(0, y, mWidth, y + panelPx);
+                y += panelPx;
+            } else {
+                mVolRect = new Rect(0, y, mWidth, y);
+            }
+            mChildRects = new ArrayList<>();
+            for (int i = 0; i < mActiveChildDraws.size(); i++) {
+                mChildRects.add(new Rect(0, y, mWidth, y + panelPx));
+                y += panelPx;
+            }
+            mChildRect = mChildRects.isEmpty()
+                    ? new Rect(0, y, mWidth, y)
+                    : mChildRects.get(mChildRects.size() - 1);
+            return;
+        }
+        mChildRects = new ArrayList<>();
 
         // When volume is hidden, merge volumeFlex into the main chart so the main area expands
         // and the child area remains the same height.
@@ -580,7 +628,7 @@ public abstract class BaseKLineChartView extends ScrollAndScaleView implements D
         // Vertical lines: split the width into 5 regions with 4 lines.
         final int verticalRegions = 5;
         float columnSpace = mWidth / (float) verticalRegions;
-        float bottom = mChildRect != null ? mChildRect.bottom : mMainRect.bottom;
+        float bottom = getChildAreaBottom();
         for (int i = 1; i < verticalRegions; i++) {
             float x = columnSpace * i;
             canvas.drawLine(x, mMainRect.top, x, bottom, mBackgroundGridPaint);
@@ -925,8 +973,27 @@ public abstract class BaseKLineChartView extends ScrollAndScaleView implements D
             if (mVolDraw != null && (configManager == null || configManager.showVolume)) {
                 mVolDraw.drawTranslated(lastPoint, currentPoint, lastX, currentPointX, canvas, this, i);
             }
-            if (mChildDraw != null) {
+            // Legacy single sub-panel (multi-panel is drawn in its own loop below).
+            if (!isMultiPanel() && mChildDraw != null) {
                 mChildDraw.drawTranslated(lastPoint, currentPoint, lastX, currentPointX, canvas, this, i);
+            }
+        }
+
+        // Native N7: draw each stacked sub-panel in its own rect. Rebinding the
+        // child fields per panel lets the existing draw code scale correctly.
+        if (isMultiPanel()) {
+            for (int p = 0; p < mActiveChildDraws.size(); p++) {
+                setChildPanelContext(p);
+                for (int i = mStartIndex; i <= mStopIndex; i++) {
+                    if (i < 0 || i >= configManager.modelArray.size()) {
+                        continue;
+                    }
+                    Object currentPoint = getItem(i);
+                    float currentPointX = getItemMiddleScrollX(i);
+                    Object lastPoint = i == 0 ? currentPoint : getItem(i - 1);
+                    float lastX = i == 0 ? currentPointX : getItemMiddleScrollX(i - 1);
+                    mChildDraw.drawTranslated(lastPoint, currentPoint, lastX, currentPointX, canvas, this, i);
+                }
             }
         }
 
@@ -1017,7 +1084,19 @@ public abstract class BaseKLineChartView extends ScrollAndScaleView implements D
                     mWidth - calculateWidth(formatValue(mVolMinValue)), mVolRect.bottom, mTextPaint);*/
         }
         //--------------画下方子图的值-------------
-        if (mChildDraw != null) {
+        if (isMultiPanel()) {
+            // Native N7: each stacked panel's max value at its own top edge.
+            for (int p = 0; p < mActiveChildDraws.size(); p++) {
+                IChartDraw d = mActiveChildDraws.get(p);
+                IValueFormatter formatter = d.getValueFormatter();
+                if (formatter instanceof ValueFormatter) {
+                    String formatValue = safeText(((ValueFormatter) formatter).format(mChildMaxValues[p]));
+                    canvas.drawText(formatValue,
+                            mWidth - calculateWidth(formatValue),
+                            mChildRects.get(p).top + baseLine, mTextPaint);
+                }
+            }
+        } else if (mChildDraw != null) {
             IValueFormatter formatter = mChildDraw.getValueFormatter();
             if (formatter instanceof ValueFormatter) {
                 ValueFormatter valueFormatter = (ValueFormatter)formatter;
@@ -1030,7 +1109,7 @@ public abstract class BaseKLineChartView extends ScrollAndScaleView implements D
         }
         //--------------画时间---------------------
         float columnSpace = mWidth / mGridColumns;
-        float y = fixTextY1((float) (mChildRect.bottom + mBottomPadding / 2.0));
+        float y = fixTextY1((float) (getChildAreaBottom() + mBottomPadding / 2.0));
 
         float startX = getItemMiddleScrollX(mStartIndex) - mPointWidth / 2;
         float stopX = getItemMiddleScrollX(mStopIndex) + mPointWidth / 2;
@@ -1205,7 +1284,7 @@ public abstract class BaseKLineChartView extends ScrollAndScaleView implements D
         // Horizontal line up to the pill's left edge (so it doesn't cross the white pill).
         canvas.drawLine(startX, y, endX, y, mSelectedXLinePaint);
         // Vertical line through the main + sub chart areas.
-        canvas.drawLine(pointX, mMainRect.top, pointX, mChildRect.bottom, mSelectedXLinePaint);
+        canvas.drawLine(pointX, mMainRect.top, pointX, getChildAreaBottom(), mSelectedXLinePaint);
 
         // --- Selected point dot (small, ~25% of the original size) ---
         mSelectCenterPaint.setColor(configManager.selectedPointContentColor);
@@ -1224,7 +1303,7 @@ public abstract class BaseKLineChartView extends ScrollAndScaleView implements D
         textWidth = mMaxMinPaint.measureText(date);
         r = textHeight / 2;
         x = scrollXtoViewX(getItemMiddleScrollX(mSelectedIndex));
-        y = mChildRect.bottom;
+        y = getChildAreaBottom();
 
         if (x < textWidth + 2 * w1) {
             x = 1 + textWidth / 2 + w1;
@@ -1426,8 +1505,10 @@ public abstract class BaseKLineChartView extends ScrollAndScaleView implements D
     }
 
     private void drawMaxMinValue(Canvas canvas, float value, float x, float y) {
-        IValueFormatter formatter = this.getValueFormatter();
-        String valueString = safeText(formatter.format(value));
+        // formatValue lazily creates the default formatter; calling getValueFormatter()
+        // directly here NPEs when no draw path has initialized it yet (e.g. percentage
+        // coordinate mode skips formatValue in drawText).
+        String valueString = safeText(formatValue(value));
         int height = calculateMaxMin(valueString).height();
         y += height / 2;
         String lineString = "---";
@@ -1477,10 +1558,21 @@ public abstract class BaseKLineChartView extends ScrollAndScaleView implements D
                 mMainDraw.drawText(canvas, this, position, x, y);
             }
             if (mVolDraw != null && (configManager == null || configManager.showVolume)) {
-                float y = mVolRect.top - mChildPadding + textHeight;
+                // Contiguous stacked panels have no padding gap above VOL, so the
+                // legend sits inside the panel top instead of above it.
+                float y = isMultiPanel()
+                        ? mVolRect.top + textHeight
+                        : mVolRect.top - mChildPadding + textHeight;
                 mVolDraw.drawText(canvas, this, position, x, y);
             }
-            if (mChildDraw != null) {
+            if (isMultiPanel()) {
+                // Native N7: each stacked panel's legend at its own top edge.
+                for (int p = 0; p < mActiveChildDraws.size(); p++) {
+                    setChildPanelContext(p);
+                    float y = mChildRects.get(p).top + textHeight;
+                    mChildDraw.drawText(canvas, this, position, x, y);
+                }
+            } else if (mChildDraw != null) {
                 float y = mVolRect.bottom + textHeight;
                 mChildDraw.drawText(canvas, this, position, x, y);
             }
@@ -1621,6 +1713,11 @@ public abstract class BaseKLineChartView extends ScrollAndScaleView implements D
         mVolMinValue = Float.MAX_VALUE;
         mChildMaxValue = Float.MIN_VALUE;
         mChildMinValue = Float.MAX_VALUE;
+        // Native N7: reset per-panel accumulators.
+        for (int p = 0; p < mChildMaxValues.length; p++) {
+            mChildMaxValues[p] = Float.MIN_VALUE;
+            mChildMinValues[p] = Float.MAX_VALUE;
+        }
         mStartIndex = Math.min(Math.max(0, indexFromScrollX(viewXToScrollX(0))), mItemCount - 1);
         mStopIndex = Math.max(0, Math.min(indexFromScrollX(viewXToScrollX(mWidth)), mItemCount - 1));
         checkLeftEdge(mStartIndex, mItemCount);
@@ -1652,7 +1749,15 @@ public abstract class BaseKLineChartView extends ScrollAndScaleView implements D
                 mVolMinValue = mVolMinValue - (mVolMaxValue - mVolMinValue) / 10.0f;
                 mVolMinValue = Math.max(0, mVolMinValue);
             }
-            if (mChildDraw != null) {
+            if (isMultiPanel()) {
+                for (int p = 0; p < mActiveChildDraws.size(); p++) {
+                    IChartDraw d = mActiveChildDraws.get(p);
+                    // Generic panels read their per-panel subLines by this index.
+                    mCurrentGenericIndex = p < mChildGenericIndex.length ? mChildGenericIndex[p] : -1;
+                    mChildMaxValues[p] = Math.max(mChildMaxValues[p], d.getMaxValue(point));
+                    mChildMinValues[p] = Math.min(mChildMinValues[p], d.getMinValue(point));
+                }
+            } else if (mChildDraw != null) {
                 mChildMaxValue = Math.max(mChildMaxValue, mChildDraw.getMaxValue(point));
                 mChildMinValue = Math.min(mChildMinValue, mChildDraw.getMinValue(point));
             }
@@ -1754,6 +1859,33 @@ public abstract class BaseKLineChartView extends ScrollAndScaleView implements D
         mVolScaleY = mVolRect.height() * 1f / (mVolMaxValue - mVolMinValue);
         if (mChildRect != null)
             mChildScaleY = mChildRect.height() * 1f / (mChildMaxValue - mChildMinValue);
+
+        // Native N7: finalize per-panel range + scale (snapped, no animation).
+        if (isMultiPanel()) {
+            for (int p = 0; p < mActiveChildDraws.size(); p++) {
+                float mx = mChildMaxValues[p];
+                float mn = mChildMinValues[p];
+                if (p < mChildIsWR.length && mChildIsWR[p]) {
+                    mx = 0f;
+                    if (Math.abs(mn) < 0.01f) {
+                        mn = -10f;
+                    }
+                }
+                if (mx == mn) {
+                    mx += Math.abs(mx * 0.05f);
+                    mn -= Math.abs(mn * 0.05f);
+                    if (mx == 0) {
+                        mx = 1f;
+                    }
+                }
+                mChildMaxValues[p] = mx;
+                mChildMinValues[p] = mn;
+                Rect r = p < mChildRects.size() ? mChildRects.get(p) : null;
+                mChildScaleYs[p] = (r != null && mx != mn)
+                        ? r.height() * 1f / (mx - mn)
+                        : 1f;
+            }
+        }
         if (mAnimator.isRunning()) {
             float value = (float) mAnimator.getAnimatedValue();
             mStopIndex = mStartIndex + Math.round(value * (mStopIndex - mStartIndex));
@@ -1889,6 +2021,115 @@ public abstract class BaseKLineChartView extends ScrollAndScaleView implements D
      */
     public void addChildDraw(IChartDraw childDraw) {
         mChildDraws.add(childDraw);
+    }
+
+    // mChildDraws registry order (see KLineChartView.initView).
+    private static final int DRAW_MACD = 0;
+    private static final int DRAW_KDJ = 1;
+    private static final int DRAW_RSI = 2;
+    private static final int DRAW_WR = 3;
+    private static final int DRAW_GENERIC = 4;
+
+    /** Registry index for a JS sub code (3=MACD..6=WR, >=100=generic), or -1. */
+    private int childDrawIndexForCode(int code) {
+        switch (code) {
+            case 3: return DRAW_MACD;
+            case 4: return DRAW_KDJ;
+            case 5: return DRAW_RSI;
+            case 6: return DRAW_WR;
+            default: return code >= 100 ? DRAW_GENERIC : -1;
+        }
+    }
+
+    /**
+     * Native N7: build the stacked panel list from configManager.secondList. When
+     * the list is empty we fall back to the legacy single mChildDraw path.
+     */
+    public void applySecondList() {
+        mActiveChildDraws = new ArrayList<>();
+        List<Boolean> wr = new ArrayList<>();
+        List<Integer> generic = new ArrayList<>();
+        int genericCount = 0;
+        List<Integer> codes = configManager != null ? configManager.secondList : null;
+        if (codes != null) {
+            for (int code : codes) {
+                int idx = childDrawIndexForCode(code);
+                if (idx < 0 || idx >= mChildDraws.size()) {
+                    continue;
+                }
+                mActiveChildDraws.add(mChildDraws.get(idx));
+                wr.add(idx == DRAW_WR);
+                if (idx == DRAW_GENERIC) {
+                    generic.add(genericCount++);
+                } else {
+                    generic.add(-1);
+                }
+            }
+        }
+        int n = mActiveChildDraws.size();
+        mChildGenericIndex = new int[n];
+        mChildIsWR = new boolean[n];
+        for (int i = 0; i < n; i++) {
+            mChildGenericIndex[i] = generic.get(i);
+            mChildIsWR[i] = wr.get(i);
+        }
+        mChildMaxValues = new float[n];
+        mChildMinValues = new float[n];
+        mChildScaleYs = new float[n];
+        // Only take over the child area when the stacked list is populated; an
+        // empty list means an old JS bundle, so keep the legacy single-panel
+        // state set by changeSecondDrawType().
+        if (n > 0) {
+            isShowChild = true;
+            mChildDraw = mActiveChildDraws.get(0);
+            mChildDrawPosition = 0;
+        }
+    }
+
+    /** True when the stacked multi-panel path is active. */
+    private boolean isMultiPanel() {
+        return mActiveChildDraws != null && !mActiveChildDraws.isEmpty();
+    }
+
+    /**
+     * Rebind the single mChildDraw/mChildRect/mChild*Value/mChildScaleY fields to
+     * stacked panel `p` so all existing single-panel draw code (getChildY,
+     * drawText, axis, selector) renders that panel.
+     */
+    private void setChildPanelContext(int p) {
+        mChildDraw = mActiveChildDraws.get(p);
+        mChildRect = mChildRects.get(p);
+        mChildMaxValue = mChildMaxValues[p];
+        mChildMinValue = mChildMinValues[p];
+        mChildScaleY = mChildScaleYs[p];
+        mCurrentGenericIndex = p < mChildGenericIndex.length ? mChildGenericIndex[p] : -1;
+    }
+
+    /**
+     * Native N7: per-candle subLines for the current generic panel (set while
+     * drawing). Falls back to the legacy single subLines for old payloads.
+     */
+    public List<HTKLineTargetItem> getCurrentSubLines(KLineEntity entity) {
+        if (entity == null) {
+            return null;
+        }
+        if (mCurrentGenericIndex >= 0
+                && entity.subLinesList != null
+                && mCurrentGenericIndex < entity.subLinesList.size()) {
+            return entity.subLinesList.get(mCurrentGenericIndex);
+        }
+        return entity.subLines;
+    }
+
+    /** Bottom of the lowest sub-panel (or vol/main when there is none). */
+    private int getChildAreaBottom() {
+        if (!mChildRects.isEmpty()) {
+            return mChildRects.get(mChildRects.size() - 1).bottom;
+        }
+        if (mChildRect != null && isShowChild) {
+            return mChildRect.bottom;
+        }
+        return mVolRect != null ? mVolRect.bottom : mMainRect.bottom;
     }
 
     /**

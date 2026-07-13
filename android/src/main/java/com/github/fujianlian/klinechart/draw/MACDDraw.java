@@ -44,9 +44,9 @@ public class MACDDraw implements IChartDraw<IMACD> {
     public void reloadColor(BaseKLineChartView view) {
         mRedPaint.setColor(view.configManager.increaseColor);
         mGreenPaint.setColor(view.configManager.decreaseColor);
-        mMACDPaint.setColor(view.configManager.targetColorList[5]);
-        mDIFPaint.setColor(view.configManager.targetColorList[0]);
-        mDEAPaint.setColor(view.configManager.targetColorList[1]);
+        mMACDPaint.setColor(view.configManager.indicatorColor("macd", 2, view.configManager.targetColorList[5]));
+        mDIFPaint.setColor(view.configManager.indicatorColor("macd", 0, view.configManager.targetColorList[0]));
+        mDEAPaint.setColor(view.configManager.indicatorColor("macd", 1, view.configManager.targetColorList[1]));
     }
 
     @Override

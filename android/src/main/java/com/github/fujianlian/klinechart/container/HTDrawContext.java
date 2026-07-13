@@ -492,12 +492,6 @@ public class HTDrawContext {
             canvas.clipRect(mainRect.left, mainRect.top, mainRect.right, mainRect.bottom);
 
             int lineColor = drawItem.drawColor;
-            if (!configManager.modelArray.isEmpty()) {
-                KLineEntity lastCandle = configManager.modelArray.get(configManager.modelArray.size() - 1);
-                lineColor = lastCandle.getClosePrice() >= lastCandle.getOpenPrice()
-                        ? configManager.increaseColor
-                        : configManager.decreaseColor;
-            }
 
             paint.setColor(lineColor);
             paint.setStrokeWidth(drawItem.drawLineHeight);
@@ -613,7 +607,7 @@ public class HTDrawContext {
             paint.setColor(lineColor);
             canvas.drawRoundRect(priceRect, priceRadius, priceRadius, paint);
 
-            // Text – use lineColor so the price matches the last candle direction.
+            // Text – use lineColor so the price label matches the line color.
             paint.setStyle(Paint.Style.FILL);
             paint.setColor(lineColor);
 

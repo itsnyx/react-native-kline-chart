@@ -188,6 +188,11 @@ public class KLineEntity implements IKLine {
     // DMI/DMA/MTM/EMV). Each item is {value,title}; drawn by GenericOscillatorDraw.
     public List<HTKLineTargetItem> subLines = new ArrayList();
 
+    // Native N7: one subLines list per stacked generic-oscillator panel (in the
+    // same order the generic panels appear in secondList). subLines above is the
+    // first entry, kept for old payloads.
+    public List<List<HTKLineTargetItem>> subLinesList = new ArrayList();
+
     // Phase 8-B main-chart overlays. Values default to NaN so draw code can skip
     // a candle that has no computed value (missing field, warm-up period, etc.).
     public List<HTKLineTargetItem> emaList = new ArrayList();

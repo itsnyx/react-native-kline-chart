@@ -134,6 +134,54 @@ class HTKLineConfigManager: NSObject {
     // Native N4: legend label for the generic sub oscillator (e.g. "ROC").
     var secondLabel = ""
 
+    // Native N7: stacked multi sub-panels. `secondList` holds each panel's child
+    // code (mirrors `second`, order = top→bottom); `secondLabelList` the matching
+    // legend labels; `subPanelHeight` the fixed per-panel height in points.
+    // When `secondList` has >1 entry the view stacks that many sub-panels and
+    // grows so the main area stays a fixed size (matches the JS-side layout).
+    var secondList = [Int]()
+
+    var secondLabelList = [String]()
+
+    var subPanelHeight: CGFloat = 0
+
+    // Native N7: index of the generic sub-panel currently being drawn, so
+    // HTGenericOscillatorDraw can pick the right per-candle subLinesList entry.
+    // -1 means "single panel — use the legacy `subLines`".
+    var currentGenericIndex: Int = -1
+
+    // Native N7: index of the stacked sub-panel currently being drawn (0-based
+    // over secondList), so per-panel legend labels resolve correctly.
+    var currentPanelIndex: Int = 0
+
+    /// The child code drawn in stacked panel `panelIndex`, or -1 if none.
+    func secondCode(at panelIndex: Int) -> Int {
+        if panelIndex >= 0 && panelIndex < secondList.count {
+            return secondList[panelIndex]
+        }
+        return second
+    }
+
+    /// Legend label for stacked panel `panelIndex`.
+    func secondLabelText(at panelIndex: Int) -> String {
+        if panelIndex >= 0 && panelIndex < secondLabelList.count {
+            return secondLabelList[panelIndex]
+        }
+        return secondLabel
+    }
+
+    /// How many generic panels precede `panelIndex` (their index into subLinesList).
+    func genericIndex(for panelIndex: Int) -> Int {
+        var g = 0
+        let upper = min(panelIndex, secondList.count)
+        for i in 0..<max(0, upper) {
+            if secondList[i] >= 100 {
+                g += 1
+            }
+        }
+        return g
+    }
+
 
 
     var itemWidth: CGFloat = 9
@@ -202,6 +250,20 @@ class HTKLineConfigManager: NSObject {
     var minuteVolumeCandleColor = UIColor.blue
 
     var targetColorList = [UIColor]()
+
+    // Native N6 (0.4.3): exact per-indicator line colors from the JS indicator
+    // settings pages. Keyed by indicator id ("boll", "macd", "kdj", "ichi",
+    // "avl", "vwap", "sar", "super", "resist", "sub"); values are ordered color
+    // lists. A missing key falls back to the shared targetColorList slots.
+    var indicatorColors = [String: [UIColor]]()
+
+    /// Explicit indicator line color, or `fallback` when JS didn't send one.
+    func indicatorColor(_ key: String, _ i: Int, _ fallback: UIColor) -> UIColor {
+        guard let list = indicatorColors[key], i >= 0, i < list.count else {
+            return fallback
+        }
+        return list[i]
+    }
 
     // Phase 8-B: extra main-chart overlays to draw (ids among "ema", "avl",
     // "vwap", "super", "sar"). Never nil so draw code can call .contains().
@@ -296,6 +358,11 @@ class HTKLineConfigManager: NSObject {
     // When false, long-pressing the chart does nothing and normal scrolling is preserved.
     // Controlled from JS via optionList.configList.hoverInfoEnabled (default: true).
     var hoverInfoEnabled: Bool = true
+
+    // Abstract-on-chart placement for the selected-candle info ("floatingPanel" |
+    // "topLayer" | "none"). "topLayer" draws a full-width summary strip pinned to
+    // the top of the chart instead of the floating panel.
+    var hoverInfoMode = "floatingPanel"
 
     // The day a week starts on, used as a fallback when computing the weekly candle close time
     // and no candle open is available to anchor on. 0=Sunday … 6=Saturday. Default: Monday (1),
@@ -563,6 +630,20 @@ class HTKLineConfigManager: NSObject {
         primary = optionList["primary"] as? Int ?? -1
         second = optionList["second"] as? Int ?? -1
         secondLabel = optionList["secondLabel"] as? String ?? ""
+        // Native N7: stacked sub-panels (order = top→bottom). Fall back to the
+        // single `second`/`secondLabel` so old JS bundles keep working.
+        if let rawSecondList = optionList["secondList"] as? [Int], !rawSecondList.isEmpty {
+            secondList = rawSecondList
+        } else if second >= 0 {
+            secondList = [second]
+        } else {
+            secondList = [Int]()
+        }
+        if let rawSecondLabelList = optionList["secondLabelList"] as? [String] {
+            secondLabelList = rawSecondLabelList
+        } else {
+            secondLabelList = [String]()
+        }
         time = optionList["time"] as? Int ?? -1
         price = optionList["price"] as? Int ?? -1
         volume = optionList["volume"] as? Int ?? -1
@@ -578,12 +659,24 @@ class HTKLineConfigManager: NSObject {
         paddingBottom = configList["paddingBottom"] as? CGFloat ?? 0
         mainFlex = configList["mainFlex"] as? CGFloat ?? 0
         volumeFlex = configList["volumeFlex"] as? CGFloat ?? 0
+        // Native N7: fixed per-panel height (points) for stacked sub-panels.
+        subPanelHeight = configList["subPanelHeight"] as? CGFloat ?? 0
 
         let colorList = configList["colorList"] as? [String: Any] ?? [String: Any]()
         increaseColor = RCTConvert.uiColor(colorList["increaseColor"])
         decreaseColor = RCTConvert.uiColor(colorList["decreaseColor"])
         minuteLineColor = RCTConvert.uiColor(configList["minuteLineColor"])
         targetColorList = type(of: self).packColorList(configList["targetColorList"])
+        // Native N6 (0.4.3): optional exact per-indicator colors. A missing key
+        // (old JS bundle, or an indicator the user never recolored) falls back
+        // to the shared targetColorList slot lookup.
+        var parsedIndicatorColors = [String: [UIColor]]()
+        if let indicatorColorsMap = configList["indicatorColors"] as? [String: Any] {
+            for (key, value) in indicatorColorsMap {
+                parsedIndicatorColors[key] = type(of: self).packColorList(value)
+            }
+        }
+        indicatorColors = parsedIndicatorColors
         // Phase 8-B: which extra main-chart overlays to draw.
         mainOverlays = (configList["mainOverlays"] as? [String]) ?? [String]()
         // Native N1: candle body style.
@@ -627,6 +720,7 @@ class HTKLineConfigManager: NSObject {
         weekStartDay = (configList["weekStartDay"] as? NSNumber)?.intValue ?? 1
         hapticOnSelection = configList["hapticOnSelection"] as? Bool ?? false
         hoverInfoEnabled = configList["hoverInfoEnabled"] as? Bool ?? true
+        hoverInfoMode = configList["hoverInfoMode"] as? String ?? "floatingPanel"
     }
 
 }

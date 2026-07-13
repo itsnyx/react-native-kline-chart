@@ -11,6 +11,11 @@ public class HTKLineTargetItem {
     public int index = 0;
     public String title = "";
     public float value = 0.0f;
+    // Native N6 (0.4.3): explicit per-line color. When present it wins over the
+    // shared targetColorList slot lookup, so the exact color the user picked in
+    // the indicator settings is drawn regardless of what else is on screen.
+    public boolean hasColor = false;
+    public int color = 0;
 
 
     public HTKLineTargetItem(Map valueList) {
@@ -30,6 +35,19 @@ public class HTKLineTargetItem {
             object = new Double(0);
         }
         int index = ((Number) object).intValue();
+        // `color` arrives as a processColor int (optionList target items) or a
+        // "#RRGGBB" string (per-candle items computed on the JS side).
+        object = valueList.get("color");
+        if (object instanceof Number) {
+            this.color = ((Number) object).intValue();
+            this.hasColor = true;
+        } else if (object instanceof String) {
+            try {
+                this.color = android.graphics.Color.parseColor((String) object);
+                this.hasColor = true;
+            } catch (Exception ignored) {
+            }
+        }
         this.title = title;
         this.value = value;
         this.selected = selected;

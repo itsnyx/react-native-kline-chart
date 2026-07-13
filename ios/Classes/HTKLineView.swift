@@ -176,6 +176,74 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
     var childBaseY: CGFloat  = 0
     var childHeight: CGFloat  = 0
 
+    // Native N7: stacked multi sub-panels (order = configManager.secondList).
+    // Each entry is one oscillator panel below the volume band. `childDrawList`
+    // holds its renderer, `childGenericIndexList` the index into a candle's
+    // `subLinesList` (-1 for non-generic), and the geometry/scale arrays its
+    // layout. When `childDrawList` is empty the legacy single-panel path runs.
+    var childDrawList = [HTKLineDrawProtocol]()
+    var childGenericIndexList = [Int]()
+    var childBaseYs = [CGFloat]()
+    var childHeights = [CGFloat]()
+    var childMinMaxRanges = [Range<CGFloat>]()
+    var animatedChildMins = [CGFloat]()
+    var animatedChildMaxs = [CGFloat]()
+
+    /// True when the stacked multi-panel path is active.
+    var isMultiPanel: Bool {
+        return !childDrawList.isEmpty
+    }
+
+    /// Bottom of the lowest sub-panel (or the vol/main band when there is none),
+    /// used by the crosshair vertical line, x-axis time row and grid bottom.
+    var childAreaBottom: CGFloat {
+        if isMultiPanel, let last = childBaseYs.indices.last {
+            return childBaseYs[last] + childHeights[last]
+        }
+        return childBaseY + childHeight
+    }
+
+    /// The child renderer for `second`/`secondList` code `code`, or nil.
+    private func childDrawForCode(_ code: Int) -> HTKLineDrawProtocol? {
+        if code >= 100 {
+            return genericDraw
+        }
+        switch HTKLineChildType(rawValue: code) ?? .none {
+        case .none: return nil
+        case .macd: return macdDraw
+        case .kdj: return kdjDraw
+        case .rsi: return rsiDraw
+        case .wr: return wrDraw
+        case .generic: return genericDraw
+        }
+    }
+
+    /// Native N7: rebuild the stacked panel renderers from configManager.secondList.
+    /// Mirrors Android's applySecondList — populated only when >1 code is present
+    /// or an oscillator is stacked alongside volume; otherwise stays empty so the
+    /// legacy single `childDraw` path is used.
+    func applySecondList() {
+        childDrawList = []
+        childGenericIndexList = []
+        var genericCount = 0
+        for code in configManager.secondList {
+            guard let draw = childDrawForCode(code) else {
+                continue
+            }
+            childDrawList.append(draw)
+            if code >= 100 {
+                childGenericIndexList.append(genericCount)
+                genericCount += 1
+            } else {
+                childGenericIndexList.append(-1)
+            }
+        }
+        if animatedChildMins.count != childDrawList.count {
+            animatedChildMins = [CGFloat](repeating: .nan, count: childDrawList.count)
+            animatedChildMaxs = [CGFloat](repeating: .nan, count: childDrawList.count)
+        }
+    }
+
 
 
 
@@ -254,6 +322,16 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
             childDraw = wrDraw
         case .generic:
             childDraw = genericDraw
+        }
+
+        // Native N7: (re)build the stacked sub-panel list. When it changes the
+        // per-panel scale animation must reset so panels don't inherit a stale
+        // min/max from a different indicator.
+        let oldPanelCount = childDrawList.count
+        applySecondList()
+        if childDrawList.count != oldPanelCount {
+            animatedChildMins = [CGFloat](repeating: .nan, count: childDrawList.count)
+            animatedChildMaxs = [CGFloat](repeating: .nan, count: childDrawList.count)
         }
 
         // "At end" is measured against the resting flush position (newest candle against the
@@ -501,9 +579,119 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
             self.mainMinMaxRange = symMainRange
         }
         self.textHeight = mainDraw.textHeight(font: UIFont.systemFont(ofSize: 11)) / 2
+
+        // Native N7: when sub-panels are stacked (subPanelHeight sent + >=1
+        // oscillator), the layout switches to a fixed-height model that mirrors
+        // Android — the main chart takes the remaining space above a run of
+        // fixed `panelPx` panels (VOL + each oscillator, contiguous). The RN
+        // container is grown by the JS side so the main area stays readable.
+        if isMultiPanel && configManager.subPanelHeight > 0 {
+            let panelPx = configManager.subPanelHeight
+            let subPanelCount = (configManager.showVolume ? 1 : 0) + childDrawList.count
+            var mainBottom = allHeight - CGFloat(subPanelCount) * panelPx
+            let minMain = configManager.paddingTop + textHeight + 60
+            if mainBottom < minMain {
+                mainBottom = minMain
+            }
+            self.mainBaseY = configManager.paddingTop - textHeight
+            self.mainHeight = mainBottom - mainBaseY - textHeight
+
+            var y = mainBottom
+            if configManager.showVolume {
+                self.volumeMinMaxRange = volumeDraw.minMaxRange(visibleModelArray, configManager)
+                self.volumeBaseY = y + configManager.headerHeight + textHeight
+                self.volumeHeight = panelPx - configManager.headerHeight - textHeight
+                y += panelPx
+            } else {
+                self.volumeMinMaxRange = Range<CGFloat>.init(uncheckedBounds: (lower: 0, upper: 0))
+                self.volumeBaseY = y
+                self.volumeHeight = 0
+            }
+
+            childBaseYs = []
+            childHeights = []
+            childMinMaxRanges = []
+            for (p, draw) in childDrawList.enumerated() {
+                // Bind the generic-panel context so a generic oscillator's
+                // minMaxRange reads the right per-candle subLinesList entry.
+                configManager.currentGenericIndex = childGenericIndexList[p]
+                configManager.currentPanelIndex = p
+                let by = y + configManager.headerHeight + textHeight
+                let h = panelPx - configManager.headerHeight - textHeight
+                let range = draw.minMaxRange(visibleModelArray, configManager)
+                childBaseYs.append(by)
+                childHeights.append(h)
+                childMinMaxRanges.append(range)
+                y += panelPx
+            }
+            configManager.currentGenericIndex = -1
+            configManager.currentPanelIndex = 0
+
+            // Per-panel scale animation (arrays sized in applySecondList).
+            if animatedChildMins.count != childDrawList.count {
+                animatedChildMins = [CGFloat](repeating: .nan, count: childDrawList.count)
+                animatedChildMaxs = [CGFloat](repeating: .nan, count: childDrawList.count)
+            }
+            var needsRedraw = false
+            for p in 0..<childMinMaxRanges.count {
+                let tMin = childMinMaxRanges[p].lowerBound
+                let tMax = childMinMaxRanges[p].upperBound
+                if animatedChildMins[p].isNaN {
+                    animatedChildMins[p] = tMin
+                    animatedChildMaxs[p] = tMax
+                } else {
+                    animatedChildMins[p] += (tMin - animatedChildMins[p]) * scaleAnimLerp
+                    animatedChildMaxs[p] += (tMax - animatedChildMaxs[p]) * scaleAnimLerp
+                    if abs(animatedChildMaxs[p] - tMax) > 0.0001 || abs(animatedChildMins[p] - tMin) > 0.0001 {
+                        needsRedraw = true
+                    }
+                }
+                childMinMaxRanges[p] = Range<CGFloat>(uncheckedBounds: (lower: animatedChildMins[p], upper: animatedChildMaxs[p]))
+            }
+
+            // Animate main/volume as usual.
+            let targetMainMin = mainMinMaxRange.lowerBound
+            let targetMainMax = mainMinMaxRange.upperBound
+            let targetVolMin = volumeMinMaxRange.lowerBound
+            let targetVolMax = volumeMinMaxRange.upperBound
+            if animatedMainMin.isNaN {
+                animatedMainMin = targetMainMin
+                animatedMainMax = targetMainMax
+                animatedVolMin = targetVolMin
+                animatedVolMax = targetVolMax
+            } else {
+                animatedMainMin += (targetMainMin - animatedMainMin) * scaleAnimLerp
+                animatedMainMax += (targetMainMax - animatedMainMax) * scaleAnimLerp
+                animatedVolMin += (targetVolMin - animatedVolMin) * scaleAnimLerp
+                animatedVolMax += (targetVolMax - animatedVolMax) * scaleAnimLerp
+                if abs(animatedMainMax - targetMainMax) > 0.0001 || abs(animatedMainMin - targetMainMin) > 0.0001
+                    || abs(animatedVolMax - targetVolMax) > 0.0001 || abs(animatedVolMin - targetVolMin) > 0.0001 {
+                    needsRedraw = true
+                }
+            }
+            self.mainMinMaxRange = Range<CGFloat>(uncheckedBounds: (lower: animatedMainMin, upper: animatedMainMax))
+            self.volumeMinMaxRange = Range<CGFloat>(uncheckedBounds: (lower: animatedVolMin, upper: animatedVolMax))
+
+            // Keep the single child fields bound to the first panel so legacy
+            // reads (hover selection clamp, etc.) still have valid geometry.
+            if let firstBaseY = childBaseYs.first {
+                self.childBaseY = firstBaseY
+                self.childHeight = childHeights[0]
+                self.childMinMaxRange = childMinMaxRanges[0]
+            }
+            if needsRedraw {
+                DispatchQueue.main.async { [weak self] in self?.setNeedsDisplay() }
+            }
+            return
+        }
+
+        // Legacy single-panel (fractional flex) layout.
+        childBaseYs = []
+        childHeights = []
+        childMinMaxRanges = []
         self.mainBaseY = configManager.paddingTop - textHeight
         self.mainHeight = allHeight * volumeRange.lowerBound - mainBaseY - textHeight
-        
+
         if configManager.showVolume {
             self.volumeMinMaxRange = volumeDraw.minMaxRange(visibleModelArray, configManager)
             self.volumeBaseY = allHeight * volumeRange.lowerBound + configManager.headerHeight + textHeight
@@ -513,7 +701,7 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
             self.volumeBaseY = allHeight * volumeRange.lowerBound
             self.volumeHeight = 0
         }
-        
+
         self.childMinMaxRange = childDraw?.minMaxRange(visibleModelArray, configManager) ?? Range<CGFloat>.init(uncheckedBounds: (lower: 0, upper: 0))
         self.childBaseY = allHeight * volumeRange.upperBound + configManager.headerHeight + textHeight
         self.childHeight = allHeight * (1 - volumeRange.upperBound) - configManager.headerHeight - textHeight
@@ -922,7 +1110,7 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
         // Vertical lines: split the width into 5 regions with 4 lines.
         let verticalRegions = 5
         let columnSpace = allWidth / CGFloat(verticalRegions)
-        let bottom = childBaseY + childHeight
+        let bottom = childAreaBottom
         for i in 1..<verticalRegions {
             let x = columnSpace * CGFloat(i)
             context.move(to: CGPoint(x: x, y: mainBaseY))
@@ -1008,7 +1196,6 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
             if configManager.showVolume {
                 volumeDraw.drawCandle(model, i, volumeMinMaxRange.upperBound, volumeMinMaxRange.lowerBound, volumeBaseY, volumeHeight, context, configManager)
             }
-            childDraw?.drawCandle(model, i, childMinMaxRange.upperBound, childMinMaxRange.lowerBound, childBaseY, childHeight, context, configManager)
 
             let lastIndex = i == 0 ? i : i - 1
             let lastModel = visibleModelArray[lastIndex]
@@ -1016,7 +1203,21 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
             if configManager.showVolume {
                 volumeDraw.drawLine(model, lastModel, volumeMinMaxRange.upperBound, volumeMinMaxRange.lowerBound, volumeBaseY, volumeHeight, i, lastIndex, context, configManager)
             }
-            childDraw?.drawLine(model, lastModel, childMinMaxRange.upperBound, childMinMaxRange.lowerBound, childBaseY, childHeight, i, lastIndex, context, configManager)
+
+            if isMultiPanel {
+                for p in 0..<childDrawList.count {
+                    configManager.currentGenericIndex = childGenericIndexList[p]
+                    configManager.currentPanelIndex = p
+                    let range = childMinMaxRanges[p]
+                    childDrawList[p].drawCandle(model, i, range.upperBound, range.lowerBound, childBaseYs[p], childHeights[p], context, configManager)
+                    childDrawList[p].drawLine(model, lastModel, range.upperBound, range.lowerBound, childBaseYs[p], childHeights[p], i, lastIndex, context, configManager)
+                }
+                configManager.currentGenericIndex = -1
+                configManager.currentPanelIndex = 0
+            } else {
+                childDraw?.drawCandle(model, i, childMinMaxRange.upperBound, childMinMaxRange.lowerBound, childBaseY, childHeight, context, configManager)
+                childDraw?.drawLine(model, lastModel, childMinMaxRange.upperBound, childMinMaxRange.lowerBound, childBaseY, childHeight, i, lastIndex, context, configManager)
+            }
         }
     }
 
@@ -1031,7 +1232,17 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
             if configManager.showVolume {
                 volumeDraw.drawText(model, baseX, volumeBaseY - configManager.headerHeight, context, configManager)
             }
-            childDraw?.drawText(model, baseX, childBaseY - configManager.headerHeight, context, configManager)
+            if isMultiPanel {
+                for p in 0..<childDrawList.count {
+                    configManager.currentGenericIndex = childGenericIndexList[p]
+                    configManager.currentPanelIndex = p
+                    childDrawList[p].drawText(model, baseX, childBaseYs[p] - configManager.headerHeight, context, configManager)
+                }
+                configManager.currentGenericIndex = -1
+                configManager.currentPanelIndex = 0
+            } else {
+                childDraw?.drawText(model, baseX, childBaseY - configManager.headerHeight, context, configManager)
+            }
         }
     }
 
@@ -1041,8 +1252,18 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
         if configManager.showVolume {
             volumeDraw.drawValue(volumeMinMaxRange.upperBound, volumeMinMaxRange.lowerBound, baseX, volumeBaseY, volumeHeight, context, configManager)
         }
-        childDraw?.drawValue(childMinMaxRange.upperBound, childMinMaxRange.lowerBound, baseX, childBaseY, childHeight, context, configManager)
-
+        if isMultiPanel {
+            for p in 0..<childDrawList.count {
+                configManager.currentGenericIndex = childGenericIndexList[p]
+                configManager.currentPanelIndex = p
+                let range = childMinMaxRanges[p]
+                childDrawList[p].drawValue(range.upperBound, range.lowerBound, baseX, childBaseYs[p], childHeights[p], context, configManager)
+            }
+            configManager.currentGenericIndex = -1
+            configManager.currentPanelIndex = 0
+        } else {
+            childDraw?.drawValue(childMinMaxRange.upperBound, childMinMaxRange.lowerBound, baseX, childBaseY, childHeight, context, configManager)
+        }
     }
 
     func drawTime(_ context: CGContext) {
@@ -1063,7 +1284,7 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
             let title = configManager.formatBottomDate(epochMs: item.id)
             let width = mainDraw.textWidth(title: title, font: font)
             let height = mainDraw.textHeight(font: font)
-            let y = childBaseY + childHeight + (configManager.paddingBottom - height) / 2
+            let y = childAreaBottom + (configManager.paddingBottom - height) / 2
             mainDraw.drawText(title: title, point: CGPoint.init(x: x - width / 2.0, y: y), color: configManager.textColor, font: font, context: context, configManager: configManager)
         }
     }
@@ -1399,7 +1620,7 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
         context.addLine(to: CGPoint(x: allWidth, y: y))
         // Vertical line through the main + sub chart areas at the selected candle.
         context.move(to: CGPoint(x: x, y: mainBaseY))
-        context.addLine(to: CGPoint(x: x, y: childBaseY + childHeight))
+        context.addLine(to: CGPoint(x: x, y: childAreaBottom))
         context.strokePath()
         context.restoreGState()
 
@@ -1512,6 +1733,13 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
         }
         let itemList = visibleModelArray[selectedIndex - visibleRange.lowerBound].selectedItemList
 
+        // Abstract-on-chart "topLayer": summary strip pinned to the chart top
+        // instead of the floating panel.
+        if configManager.hoverInfoMode == "topLayer" {
+            drawTopLayerAbstract(context, itemList: itemList)
+            return
+        }
+
         let font = configManager.createFont(configManager.panelTextFontSize)
         let color = configManager.candleTextColor
         let offset = CGFloat(selectedIndex) * configManager.itemWidth - contentOffset.x
@@ -1574,6 +1802,68 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
         }
     }
 
+    /**
+     * Abstract-on-chart "topLayer" mode: the selected candle's info items flow
+     * left-to-right in a full-width strip pinned to the top of the chart,
+     * wrapping onto extra rows as needed (instead of the floating panel).
+     */
+    func drawTopLayerAbstract(_ context: CGContext, itemList: [[String: Any]]) {
+        if itemList.isEmpty {
+            return
+        }
+        let font = configManager.createFont(configManager.panelTextFontSize)
+        let padH: CGFloat = 10
+        let padV: CGFloat = 6
+        let itemGap: CGFloat = 12
+        let titleGap: CGFloat = 4
+        let rowGap: CGFloat = 4
+        let lineH = mainDraw.textHeight(font: font)
+        let maxX = allWidth - padH
+
+        // Measure pass: how many rows does the flow layout need?
+        var rows = 1
+        var x: CGFloat = padH
+        for item in itemList {
+            let title = item["title"] as? String ?? ""
+            let detail = item["detail"] as? String ?? ""
+            let w = mainDraw.textWidth(title: title, font: font) + titleGap + mainDraw.textWidth(title: detail, font: font)
+            if x + w > maxX, x > padH {
+                rows += 1
+                x = padH
+            }
+            x += w + itemGap
+        }
+        let stripHeight = padV * 2 + CGFloat(rows) * lineH + CGFloat(rows - 1) * rowGap
+
+        // Full-width strip background + bottom hairline, pinned to the top.
+        context.setFillColor(configManager.panelBackgroundColor.cgColor)
+        context.fill(CGRect(x: 0, y: 0, width: allWidth, height: stripHeight))
+        context.setStrokeColor(configManager.panelBorderColor.cgColor)
+        context.setLineWidth(configManager.lineWidth / 2.0)
+        context.move(to: CGPoint(x: 0, y: stripHeight))
+        context.addLine(to: CGPoint(x: allWidth, y: stripHeight))
+        context.strokePath()
+
+        // Draw pass.
+        x = padH
+        var y: CGFloat = padV
+        for item in itemList {
+            let title = item["title"] as? String ?? ""
+            let detail = item["detail"] as? String ?? ""
+            let titleWidth = mainDraw.textWidth(title: title, font: font)
+            let detailWidth = mainDraw.textWidth(title: detail, font: font)
+            let w = titleWidth + titleGap + detailWidth
+            if x + w > maxX, x > padH {
+                x = padH
+                y += lineH + rowGap
+            }
+            mainDraw.drawText(title: title, point: CGPoint(x: x, y: y), color: configManager.textColor, font: font, context: context, configManager: configManager)
+            let detailColor = item["color"] as? UIColor ?? configManager.candleTextColor
+            mainDraw.drawText(title: detail, point: CGPoint(x: x + titleWidth + titleGap, y: y), color: detailColor, font: font, context: context, configManager: configManager)
+            x += w + itemGap
+        }
+    }
+
     func drawSelectedTime(_ context: CGContext) {
         guard visibleRange.contains(selectedIndex) else {
             return
@@ -1591,7 +1881,7 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
         let paddingV: CGFloat = 3
         let cornerRadius: CGFloat = 5
 
-        let rowCenterY = childBaseY + childHeight + configManager.paddingBottom / 2
+        let rowCenterY = childAreaBottom + configManager.paddingBottom / 2
         let pillHeight = textHeight + paddingV * 2
         let rectY = rowCenterY - pillHeight / 2
         let rect = CGRect(x: x - width / 2 - paddingH, y: rectY, width: width + paddingH * 2, height: pillHeight)

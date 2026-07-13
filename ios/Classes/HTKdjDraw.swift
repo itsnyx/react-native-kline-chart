@@ -27,9 +27,9 @@ class HTKdjDraw: NSObject, HTKLineDrawProtocol {
 
     func drawLine(_ model: HTKLineModel, _ lastModel: HTKLineModel, _ maxValue: CGFloat, _ minValue: CGFloat, _ baseY: CGFloat, _ height: CGFloat, _ index: Int, _ lastIndex: Int, _ context: CGContext, _ configManager: HTKLineConfigManager) {
         let itemList = [
-            ["value": model.kdjK, "lastValue": lastModel.kdjK, "color": configManager.targetColorList[0]],
-            ["value": model.kdjD, "lastValue": lastModel.kdjD, "color": configManager.targetColorList[1]],
-            ["value": model.kdjJ, "lastValue": lastModel.kdjJ, "color": configManager.targetColorList[2]],
+            ["value": model.kdjK, "lastValue": lastModel.kdjK, "color": configManager.indicatorColor("kdj", 0, configManager.targetColorList[0])],
+            ["value": model.kdjD, "lastValue": lastModel.kdjD, "color": configManager.indicatorColor("kdj", 1, configManager.targetColorList[1])],
+            ["value": model.kdjJ, "lastValue": lastModel.kdjJ, "color": configManager.indicatorColor("kdj", 2, configManager.targetColorList[2])],
         ]
         for item in itemList {
             drawLine(value: item["value"] as? CGFloat ?? 0, lastValue: item["lastValue"] as? CGFloat ?? 0, maxValue: maxValue, minValue: minValue, baseY: baseY, height: height, index: index, lastIndex: lastIndex, color: item["color"] as? UIColor ?? UIColor.orange, isBezier: false, context: context, configManager: configManager)
@@ -40,9 +40,9 @@ class HTKdjDraw: NSObject, HTKLineDrawProtocol {
         var x = baseX
         let itemList = [
             ["title": String(format: "KDJ(%@,%@,%@)", configManager.kdjN, configManager.kdjM1, configManager.kdjM2), "color": configManager.textColor],
-            ["title": String(format: "K:%@", configManager.precision(model.kdjK, -1)), "color": configManager.targetColorList[0]],
-            ["title": String(format: "D:%@", configManager.precision(model.kdjD, -1)), "color": configManager.targetColorList[1]],
-            ["title": String(format: "J:%@", configManager.precision(model.kdjJ, -1)), "color": configManager.targetColorList[2]],
+            ["title": String(format: "K:%@", configManager.precision(model.kdjK, -1)), "color": configManager.indicatorColor("kdj", 0, configManager.targetColorList[0])],
+            ["title": String(format: "D:%@", configManager.precision(model.kdjD, -1)), "color": configManager.indicatorColor("kdj", 1, configManager.targetColorList[1])],
+            ["title": String(format: "J:%@", configManager.precision(model.kdjJ, -1)), "color": configManager.indicatorColor("kdj", 2, configManager.targetColorList[2])],
         ]
         let font = configManager.createFont(configManager.headerTextFontSize)
         for item in itemList {

@@ -501,12 +501,7 @@ class HTDrawContext {
             let marginX: CGFloat = 4
             let centerY = viewPoint.y
 
-            var lineColor = drawItem.drawColor
-            if let lastCandle = configManager.modelArray.last {
-                lineColor = lastCandle.close >= lastCandle.open
-                    ? configManager.increaseColor
-                    : configManager.decreaseColor
-            }
+            let lineColor = drawItem.drawColor
 
             // 1) Draw the dashed line across the full width first (with reduced opacity).
             //    Labels drawn afterwards will paint their opaque backgrounds on top.
@@ -790,7 +785,7 @@ class HTDrawContext {
             let end = CGPoint(x: viewPoint.x, y: klineView.bounds.size.height)
 
             context.saveGState()
-            context.setStrokeColor(drawItem.drawColor.withAlphaComponent(0.35).cgColor)
+            context.setStrokeColor(drawItem.drawColor.cgColor)
             context.setLineWidth(drawItem.drawLineHeight)
             var dashList = [drawItem.drawDashWidth, drawItem.drawDashSpace]
             if drawItem.drawDashSpace == 0 {
