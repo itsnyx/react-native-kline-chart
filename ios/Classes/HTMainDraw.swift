@@ -117,14 +117,28 @@ class HTMainDraw: NSObject, HTKLineDrawProtocol {
                 case "downHollow": hollow = !model.increment
                 default: hollow = false
                 }
-                // Wick (thin filled bar from high to low).
-                drawCandle(high: model.high, low: model.low, maxValue: maxValue, minValue: minValue, baseY: baseY, height: height, index: index, width: configManager.candleLineWidth, color: color, verticalAlignBottom: false, context: context, configManager: configManager)
                 let bodyRect = CGRect(x: centerX - candleWidth / 2, y: bodyTop, width: candleWidth, height: bodyBottom - bodyTop)
                 if hollow {
+                    // Hollow body: draw the wick ONLY above and below the body, so
+                    // no filled line crosses the transparent body interior. The
+                    // body top/bottom map back to the higher/lower of open/close.
+                    let bodyHighPrice = max(model.open, model.close)
+                    let bodyLowPrice = min(model.open, model.close)
+                    // The helper forces a 1px minimum, so only draw a wick segment
+                    // when one actually exists (avoids a stray nub on the body edge).
+                    if model.high > bodyHighPrice {
+                        drawCandle(high: model.high, low: bodyHighPrice, maxValue: maxValue, minValue: minValue, baseY: baseY, height: height, index: index, width: configManager.candleLineWidth, color: color, verticalAlignBottom: false, context: context, configManager: configManager)
+                    }
+                    if bodyLowPrice > model.low {
+                        drawCandle(high: bodyLowPrice, low: model.low, maxValue: maxValue, minValue: minValue, baseY: baseY, height: height, index: index, width: configManager.candleLineWidth, color: color, verticalAlignBottom: false, context: context, configManager: configManager)
+                    }
                     context.setStrokeColor(color.cgColor)
                     context.setLineWidth(configManager.candleLineWidth)
                     context.stroke(bodyRect)
                 } else {
+                    // Solid body: a full high→low wick is fine — the filled body
+                    // is painted on top of it.
+                    drawCandle(high: model.high, low: model.low, maxValue: maxValue, minValue: minValue, baseY: baseY, height: height, index: index, width: configManager.candleLineWidth, color: color, verticalAlignBottom: false, context: context, configManager: configManager)
                     context.setFillColor(color.cgColor)
                     context.fill(bodyRect)
                 }

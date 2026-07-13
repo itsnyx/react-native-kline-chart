@@ -159,6 +159,10 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
     // Track panel config so we can reset vertical scale when volume/child indicator changes.
     private var lastRenderedChildType: HTKLineChildType = .none
     private var lastRenderedShowVolume: Bool = true
+    // Track the main-chart indicator set (MA/BOLL + overlays like EMA/BOLL) so the
+    // main vertical scale SNAPS to the new range instead of animating when an
+    // indicator that widens the range (e.g. BOLL) is added or removed.
+    private var lastRenderedMainSignature: String = ""
 
     // 计算属性
     var visibleModelArray = [HTKLineModel]()
@@ -303,10 +307,15 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
 
         let childType = configManager.childType
         let showVolume = configManager.showVolume
-        if childType != lastRenderedChildType || showVolume != lastRenderedShowVolume {
+        // Signature of everything that changes the main chart's value range.
+        let mainSignature = "\(configManager.mainType.rawValue)|" +
+            configManager.mainOverlays.sorted().joined(separator: ",")
+        if childType != lastRenderedChildType || showVolume != lastRenderedShowVolume
+            || mainSignature != lastRenderedMainSignature {
             resetAnimatedScaleValues()
             lastRenderedChildType = childType
             lastRenderedShowVolume = showVolume
+            lastRenderedMainSignature = mainSignature
         }
 
         switch configManager.childType {
@@ -627,26 +636,35 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
             configManager.currentGenericIndex = -1
             configManager.currentPanelIndex = 0
 
-            // Per-panel scale animation (arrays sized in applySecondList).
-            if animatedChildMins.count != childDrawList.count {
-                animatedChildMins = [CGFloat](repeating: .nan, count: childDrawList.count)
-                animatedChildMaxs = [CGFloat](repeating: .nan, count: childDrawList.count)
-            }
+            // Native N7: each stacked panel's range is SNAPPED (no animation) and
+            // sanitized, mirroring Android. Animating per-panel scale made a newly
+            // added oscillator visibly resize its Y-axis from a stale/garbage seed,
+            // and could leave RSI/WR invisible while it slowly lerped from an
+            // inverted (no-data) range. Snapping shows the panel at the right scale
+            // on the first frame its data is present.
             var needsRedraw = false
             for p in 0..<childMinMaxRanges.count {
-                let tMin = childMinMaxRanges[p].lowerBound
-                let tMax = childMinMaxRanges[p].upperBound
-                if animatedChildMins[p].isNaN {
-                    animatedChildMins[p] = tMin
-                    animatedChildMaxs[p] = tMax
-                } else {
-                    animatedChildMins[p] += (tMin - animatedChildMins[p]) * scaleAnimLerp
-                    animatedChildMaxs[p] += (tMax - animatedChildMaxs[p]) * scaleAnimLerp
-                    if abs(animatedChildMaxs[p] - tMax) > 0.0001 || abs(animatedChildMins[p] - tMin) > 0.0001 {
-                        needsRedraw = true
-                    }
+                var mn = childMinMaxRanges[p].lowerBound
+                var mx = childMinMaxRanges[p].upperBound
+                // WR is a 0…-100 oscillator: anchor the top at 0 so it reads like
+                // the built-in WR panel instead of auto-fitting to its data band.
+                if childDrawList[p] === wrDraw {
+                    mx = 0
+                    if abs(mn) < 0.01 { mn = -10 }
                 }
-                childMinMaxRanges[p] = Range<CGFloat>(uncheckedBounds: (lower: animatedChildMins[p], upper: animatedChildMaxs[p]))
+                if !mn.isFinite || !mx.isFinite || mx < mn {
+                    // No / degenerate data this frame — use a small finite range so
+                    // the scale never becomes NaN or inverted (which would draw the
+                    // lines off-panel and look like the indicator is missing).
+                    mn = 0
+                    mx = 1
+                } else if mx == mn {
+                    // Flat line — pad so it renders through the middle of the panel.
+                    mx += abs(mx * 0.05)
+                    mn -= abs(mn * 0.05)
+                    if mx == mn { mx = mn + 1 }
+                }
+                childMinMaxRanges[p] = Range<CGFloat>(uncheckedBounds: (lower: mn, upper: mx))
             }
 
             // Animate main/volume as usual.
