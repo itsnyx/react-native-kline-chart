@@ -132,9 +132,15 @@ class HTMainDraw: NSObject, HTKLineDrawProtocol {
                     if bodyLowPrice > model.low {
                         drawCandle(high: bodyLowPrice, low: model.low, maxValue: maxValue, minValue: minValue, baseY: baseY, height: height, index: index, width: configManager.candleLineWidth, color: color, verticalAlignBottom: false, context: context, configManager: configManager)
                     }
+                    // Hollow body outline: 2x the wick width so it doesn't read as
+                    // a hairline; inset keeps the stroke inside the candle width.
+                    let hollowStroke = configManager.candleLineWidth * 2
                     context.setStrokeColor(color.cgColor)
-                    context.setLineWidth(configManager.candleLineWidth)
-                    context.stroke(bodyRect)
+                    context.setLineWidth(hollowStroke)
+                    let outlineRect = bodyRect.width > hollowStroke
+                        ? bodyRect.insetBy(dx: hollowStroke / 2, dy: 0)
+                        : bodyRect
+                    context.stroke(outlineRect)
                 } else {
                     // Solid body: a full high→low wick is fine — the filled body
                     // is painted on top of it.

@@ -327,6 +327,7 @@ const optionList = {
     paddingTop: 10,
     paddingRight: 60,         // Right padding (space for price labels)
     rightPaddingCandles: 3,   // Empty space (in candle widths) kept right of the newest candle when scrolled to the end
+    minVisibleCandles: 3,     // 0.4.5+: user can overscroll toward the present until only this many candles remain visible
     paddingBottom: 0,
     mainFlex: 0.6,            // Fraction of chart height for main area
     volumeFlex: 0.15,         // Fraction of chart height for volume area
@@ -404,6 +405,7 @@ const optionList = {
 |------|------|-------------|
 | `optionList` | `string` (JSON) | Full configuration including data, indicators, drawing state, and visual config. Triggers a complete re-render. |
 | `modelArray` | `string` (JSON) | Fast-path candle data update. Only replaces candle data without re-parsing full config. Preferred for live updates and pagination. |
+| `bidAsk` | `string` (JSON) | 0.4.5+: real-time bid/ask labels on the close-price line (Bitget style): `{"show":true,"bid":62035.0,"ask":62035.01,"bidText":"Bid","askText":"Ask"}`. Ask is drawn above the line (bear color), Bid below it (bull color), left of the price pill. Fast path — does not re-parse config. Pass `null` or `{"show":false}` to hide. |
 | `style` | `ViewStyle` | Standard RN style. Set `flex: 1` or explicit `width`/`height`. |
 
 ### Events

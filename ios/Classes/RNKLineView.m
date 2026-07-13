@@ -23,5 +23,9 @@ RCT_EXPORT_VIEW_PROPERTY(optionList, NSString)
 // latest data without re-sending the whole optionList.
 RCT_EXPORT_VIEW_PROPERTY(modelArray, NSString)
 
+// Real-time bid/ask labels on the close-price line: JSON string
+// {"show":true,"bid":n,"ask":n,"bidText":"Bid","askText":"Ask"}.
+RCT_EXPORT_VIEW_PROPERTY(bidAsk, NSString)
+
 @end
 

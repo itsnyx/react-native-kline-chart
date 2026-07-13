@@ -358,10 +358,15 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
         if (configManager.shouldScrollToEnd || isEnd) {
             // If layout hasn't happened yet (width == 0), defer to layoutSubviews().
             if bounds.size.width > 0 {
-                let toEndContentOffset = endContentOffsetX
+                // Preserve any overscroll into the right tail so config reloads
+                // don't yank an overscrolled chart back to the resting position.
+                let overscroll = max(contentOffset.x - oldFlushEnd, 0)
+                let toEndContentOffset = endContentOffsetX + overscroll
                 let distance = abs(contentOffset.x - toEndContentOffset)
                 let animated = distance <= configManager.itemWidth
-                scrollToEndIfPossible(animated: animated)
+                didApplyInitialScrollToEnd = true
+                reloadContentOffset(toEndContentOffset, animated)
+                scrollViewDidScroll(self)
             } else {
                 scrollViewDidScroll(self)
             }
@@ -437,8 +442,14 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
     }
 
     // Extra scrollable space to the right of the newest candle. This space is reachable by
-    // scrolling but is NOT shown at rest. `rightPaddingCandles` candle widths (configurable from JS).
-    var rightTailPadding: CGFloat { configManager.itemWidth * configManager.rightPaddingCandles }
+    // scrolling but is NOT shown at rest. Sized so the user can overscroll toward the present
+    // until only `minVisibleCandles` candles remain on screen (Bitget-style), with the legacy
+    // `rightPaddingCandles` tail as a floor for small/unlaid-out views.
+    var rightTailPadding: CGFloat {
+        let legacyTail = configManager.itemWidth * configManager.rightPaddingCandles
+        let overscrollTail = bounds.size.width - configManager.paddingRight - configManager.itemWidth * configManager.minVisibleCandles
+        return max(legacyTail, overscrollTail)
+    }
 
     /// The resting "end" content offset: the newest candle sits flush against the right price
     /// axis with NO right padding visible. Used for the initial scroll-to-end and live-follow,
@@ -544,7 +555,13 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
         // When volume is hidden, we "merge" volumeFlex into the main chart so the
         // main area expands and the child area stays the same size.
         let mainBoundary = configManager.mainFlex + (configManager.showVolume ? 0 : configManager.volumeFlex)
-        let volumeBoundary = mainBoundary + (configManager.showVolume ? configManager.volumeFlex : 0)
+        // When volume is shown but there is NO child oscillator, give the empty
+        // child area to the volume panel so it stays large and fully visible
+        // (critical on short landscape viewports where the base volumeFlex alone
+        // is too small to be usable).
+        let childFlex = 1 - configManager.mainFlex - configManager.volumeFlex
+        let volExtra: CGFloat = (configManager.showVolume && childDraw == nil) ? childFlex : 0
+        let volumeBoundary = mainBoundary + (configManager.showVolume ? configManager.volumeFlex + volExtra : 0)
         self.volumeRange = mainBoundary...volumeBoundary
         
         self.allHeight = self.bounds.size.height - configManager.paddingBottom
@@ -713,7 +730,9 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
         if configManager.showVolume {
             self.volumeMinMaxRange = volumeDraw.minMaxRange(visibleModelArray, configManager)
             self.volumeBaseY = allHeight * volumeRange.lowerBound + configManager.headerHeight + textHeight
-            self.volumeHeight = allHeight * (volumeRange.upperBound - volumeRange.lowerBound) - configManager.headerHeight - textHeight
+            // Floor the panel body so the fixed header/text offsets can't drive it
+            // negative on short viewports (which would hide the volume bars).
+            self.volumeHeight = max(12, allHeight * (volumeRange.upperBound - volumeRange.lowerBound) - configManager.headerHeight - textHeight)
         } else {
             self.volumeMinMaxRange = Range<CGFloat>.init(uncheckedBounds: (lower: 0, upper: 0))
             self.volumeBaseY = allHeight * volumeRange.lowerBound
@@ -870,7 +889,25 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
 
         guard boundsChanged || contentChanged || needsInitialScrollToEnd else { return }
 
+        // Whether the chart was resting at the newest candle BEFORE this resize, measured
+        // against the OLD width/content flush position (not the padded max). A rotation or
+        // fullscreen toggle must keep an end-pinned chart pinned; otherwise the offset clamp
+        // below can leave the right-padding tail exposed as a blank gap before the price axis.
+        let oldWidth = lastKnownBoundsSize.width
+        let oldTail = max(
+            configManager.itemWidth * configManager.rightPaddingCandles,
+            oldWidth - configManager.paddingRight - configManager.itemWidth * configManager.minVisibleCandles
+        )
+        let wasAtEnd = oldWidth > 0
+            && contentOffset.x + 1 >= max(0, lastKnownContentSize.width - oldTail - oldWidth)
+
         lastKnownBoundsSize = bounds.size
+
+        // The overscroll tail (rightTailPadding) depends on the view width, so recompute the
+        // content size whenever bounds change (first layout, rotation, fullscreen toggle).
+        if boundsChanged && !configManager.modelArray.isEmpty {
+            reloadContentSize()
+        }
         lastKnownContentSize = contentSize
 
         if !isShowingLoadingSpinner {
@@ -887,6 +924,9 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
         // not require contentSize > bounds: with few candles the end offset clamps to 0, which still
         // keeps the newest candle visible.
         if needsInitialScrollToEnd {
+            scrollToEndIfPossible(animated: false)
+        } else if boundsChanged && wasAtEnd {
+            // Keep the newest candle flush against the price axis across resizes.
             scrollToEndIfPossible(animated: false)
         } else {
             // Ensure visibleRange matches the latest layout/offset (also triggers redraw).
@@ -1484,12 +1524,50 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
             mainDraw.drawText(title: countdown, point: CGPoint(x: countdownX, y: countdownY), color: color, font: font, context: context, configManager: configManager)
         }
 
+        // --- Real-time bid/ask labels (Bitget style), left of the price pill ---
+        drawBidAskLabels(context, lineY: y, anchorRight: pillRect.minX - 6)
+
         // --- Lottie animation for minute charts ---
         if (configManager.isMinute) {
             animationView.isHidden = false
             UIView.animate(withDuration: 0.15) {
                 self.animationView.center = CGPoint.init(x: x + self.configManager.itemWidth / 2 + self.contentOffset.x, y: y)
             }
+        }
+    }
+
+    /// Draws the real-time Ask (above) and Bid (below) outlined labels on the close-price
+    /// line, right-aligned against `anchorRight`. Enabled via the `bidAsk` prop.
+    func drawBidAskLabels(_ context: CGContext, lineY: CGFloat, anchorRight: CGFloat) {
+        guard configManager.showBidAsk, configManager.bidPrice > 0, configManager.askPrice > 0 else {
+            return
+        }
+        let font = configManager.createFont(configManager.rightTextFontSize)
+        let paddingH: CGFloat = 6
+        let paddingV: CGFloat = 3
+        let gap: CGFloat = 3 // distance between the price line and each label box
+        let items: [(label: String, price: CGFloat, color: UIColor, above: Bool)] = [
+            (configManager.askText, configManager.askPrice, configManager.decreaseColor, true),
+            (configManager.bidText, configManager.bidPrice, configManager.increaseColor, false),
+        ]
+        for item in items {
+            let title = item.label + "  " + configManager.precision(item.price, configManager.price)
+            let textWidth = mainDraw.textWidth(title: title, font: font)
+            let textHeight = mainDraw.textHeight(font: font)
+            let boxWidth = textWidth + paddingH * 2
+            let boxHeight = textHeight + paddingV * 2
+            let boxX = anchorRight - boxWidth
+            let boxY = item.above ? lineY - gap - boxHeight : lineY + gap
+            let rect = CGRect(x: boxX, y: boxY, width: boxWidth, height: boxHeight)
+            let path = UIBezierPath(roundedRect: rect, cornerRadius: 4)
+            context.setFillColor(configManager.closePriceRightBackgroundColor.cgColor)
+            context.addPath(path.cgPath)
+            context.fillPath()
+            context.setStrokeColor(item.color.cgColor)
+            context.setLineWidth(1)
+            context.addPath(path.cgPath)
+            context.strokePath()
+            mainDraw.drawText(title: title, point: CGPoint(x: boxX + paddingH, y: boxY + paddingV), color: item.color, font: font, context: context, configManager: configManager)
         }
     }
 

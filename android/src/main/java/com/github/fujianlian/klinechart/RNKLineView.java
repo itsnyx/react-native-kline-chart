@@ -114,6 +114,38 @@ public class RNKLineView extends SimpleViewManager<HTKLineContainerView> {
     }
 
     /**
+     * Lightweight real-time bid/ask update: JSON string like
+     * {"show":true,"bid":62035.0,"ask":62035.01,"bidText":"Bid","askText":"Ask"}.
+     * Kept separate from optionList so per-tick updates don't reload the full config.
+     */
+    @ReactProp(name = "bidAsk")
+    public void setBidAsk(final HTKLineContainerView containerView, @Nullable String bidAskJson) {
+        HTKLineConfigManager configManager = containerView.configManager;
+        if (bidAskJson == null || bidAskJson.isEmpty()) {
+            configManager.showBidAsk = false;
+        } else {
+            try {
+                Map map = (Map) JSON.parse(bidAskJson);
+                Object show = map.get("show");
+                Object bid = map.get("bid");
+                Object ask = map.get("ask");
+                Object bidText = map.get("bidText");
+                Object askText = map.get("askText");
+                configManager.showBidAsk = Boolean.TRUE.equals(show);
+                configManager.bidPrice = bid instanceof Number ? ((Number) bid).floatValue() : 0;
+                configManager.askPrice = ask instanceof Number ? ((Number) ask).floatValue() : 0;
+                configManager.bidText = bidText instanceof String ? (String) bidText : "Bid";
+                configManager.askText = askText instanceof String ? (String) askText : "Ask";
+            } catch (Exception e) {
+                configManager.showBidAsk = false;
+            }
+        }
+        if (containerView.klineView != null) {
+            containerView.klineView.invalidate();
+        }
+    }
+
+    /**
      * Lightweight data-only update: replace modelArray without reloading full optionList.
      * Accepts the same modelArray JSON you normally embed inside optionList.
      */
@@ -216,7 +248,12 @@ public class RNKLineView extends SimpleViewManager<HTKLineContainerView> {
                         } else {
                             containerView.klineView.notifyChanged();
                             if (wasAtEnd) {
-                                containerView.klineView.setScrollX(containerView.klineView.getEndScrollX());
+                                // Preserve any overscroll into the right tail (Bitget-style
+                                // "3 candles visible" view): keep the same distance past the
+                                // flush end so live ticks don't yank the chart back.
+                                int overscroll = Math.max(oldScrollOffset - oldEndScrollX, 0);
+                                int target = containerView.klineView.getEndScrollX() + overscroll;
+                                containerView.klineView.setScrollX(Math.min(target, containerView.klineView.getMaxScrollX()));
                             }
                             if (dataReplaced) {
                                 // Data replaced entirely (e.g. timeframe switch) — clear the

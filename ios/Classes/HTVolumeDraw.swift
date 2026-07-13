@@ -74,7 +74,7 @@ class HTVolumeDraw: NSObject, HTKLineDrawProtocol {
         var x = baseX
         let font = configManager.createFont(configManager.headerTextFontSize)
         let volColor = configManager.targetColorList.count > 5 ? configManager.targetColorList[5] : configManager.textColor
-        x += drawText(title: String(format: "VOL:%@", configManager.precision(model.volume, configManager.volume)), point: CGPoint.init(x: x, y: baseY), color: volColor, font: font, context: context, configManager: configManager)
+        x += drawText(title: String(format: "VOL:%@", configManager.formatVolume(model.volume)), point: CGPoint.init(x: x, y: baseY), color: volColor, font: font, context: context, configManager: configManager)
         x += 5
         guard !configManager.maVolumeList.isEmpty, !model.maVolumeList.isEmpty else {
             return
@@ -84,7 +84,7 @@ class HTVolumeDraw: NSObject, HTKLineDrawProtocol {
                 continue
             }
             let item = model.maVolumeList[i]
-            let title = String(format: "MA%@:%@", item.title, configManager.precision(item.value, configManager.volume))
+            let title = String(format: "MA%@:%@", item.title, configManager.formatVolume(item.value))
             let color = itemModel.color ?? paletteColor(itemModel.index, configManager)
             x += drawText(title: title, point: CGPoint.init(x: x, y: baseY), color: color, font: font, context: context, configManager: configManager)
             x += 5
@@ -92,7 +92,12 @@ class HTVolumeDraw: NSObject, HTKLineDrawProtocol {
     }
 
     func drawValue(_ maxValue: CGFloat, _ minValue: CGFloat, _ baseX: CGFloat, _ baseY: CGFloat, _ height: CGFloat, _ context: CGContext, _ configManager: HTKLineConfigManager) {
-        drawValue(maxValue, minValue, baseX, baseY, height, 1, configManager.volume, context, configManager)
+        // Single max-value axis label, abbreviated (55.66K / 202.08M) like the header.
+        let font = configManager.createFont(configManager.rightTextFontSize)
+        let title = configManager.formatVolume(maxValue)
+        let width = textWidth(title: title, font: font)
+        let y = baseY - textHeight(font: font) / 2
+        drawText(title: title, point: CGPoint.init(x: baseX - width, y: y), color: configManager.textColor, font: font, context: context, configManager: configManager)
     }
 
 

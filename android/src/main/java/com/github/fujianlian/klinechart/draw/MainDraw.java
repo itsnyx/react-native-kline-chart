@@ -571,7 +571,9 @@ public class MainDraw implements IChartDraw<ICandle> {
         float r = mCandleWidth / 2;
         float lineR = mCandleLineWidth / 2;
 
-        Paint paint = isUp ? mGreenPaint : mRedPaint;
+        // Legacy paint naming: reloadColor puts increaseColor into mRedPaint
+        // (red = up in the original lib), so bullish candles use mRedPaint.
+        Paint paint = isUp ? mRedPaint : mGreenPaint;
         float bodyTop = Math.min(openY, closeY);
         float bodyBottom = Math.max(openY, closeY);
         if (bodyBottom - bodyTop < 1) {
@@ -613,8 +615,13 @@ public class MainDraw implements IChartDraw<ICandle> {
             // Wick above and below the body.
             canvas.drawLine(x, highY, x, bodyTop, paint);
             canvas.drawLine(x, bodyBottom, x, lowY, paint);
-            // Hollow body outline.
-            canvas.drawRect(x - r + lineR, bodyTop, x + r - lineR, bodyBottom, paint);
+            // Hollow body outline: 2x the wick width so it doesn't read as a
+            // hairline; inset keeps the stroke inside the candle width.
+            float hollowStroke = mCandleLineWidth * 2f;
+            float inset = hollowStroke / 2;
+            paint.setStrokeWidth(hollowStroke);
+            canvas.drawRect(x - r + inset, bodyTop, x + r - inset, bodyBottom, paint);
+            paint.setStrokeWidth(mCandleLineWidth);
             paint.setStyle(previous);
         } else {
             paint.setStyle(Paint.Style.FILL);

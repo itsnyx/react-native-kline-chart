@@ -52,6 +52,32 @@ class HTKLineContainerView: UIView {
         }
     }
 
+    // Lightweight real-time bid/ask update: JSON string like
+    // {"show":true,"bid":62035.0,"ask":62035.01,"bidText":"Bid","askText":"Ask"}.
+    // Kept separate from optionList so per-tick updates don't reload the full config.
+    @objc var bidAsk: String? {
+        didSet {
+            var dict: [String: Any]? = nil
+            if let bidAsk = bidAsk, let data = bidAsk.data(using: .utf8) {
+                do {
+                    dict = try JSONSerialization.jsonObject(with: data, options: .allowFragments) as? [String: Any]
+                } catch {
+                    dict = nil
+                }
+            }
+            if let dict = dict {
+                configManager.showBidAsk = dict["show"] as? Bool ?? false
+                configManager.bidPrice = dict["bid"] as? CGFloat ?? 0
+                configManager.askPrice = dict["ask"] as? CGFloat ?? 0
+                configManager.bidText = dict["bidText"] as? String ?? "Bid"
+                configManager.askText = dict["askText"] as? String ?? "Ask"
+            } else {
+                configManager.showBidAsk = false
+            }
+            klineView.setNeedsDisplay()
+        }
+    }
+
     // Lightweight data-only update: replace modelArray without reloading full optionList.
     // Accepts the same modelArray JSON you normally embed inside optionList.
     @objc var modelArray: String? {
@@ -143,7 +169,11 @@ class HTKLineContainerView: UIView {
                             self.configManager.loadingMoreFromLeft = false
                             self.klineView.setContentOffset(CGPoint(x: self.klineView.endContentOffsetX, y: 0), animated: false)
                         } else if wasAtEnd {
-                            self.klineView.setContentOffset(CGPoint(x: self.klineView.endContentOffsetX, y: 0), animated: false)
+                            // Preserve any overscroll into the right tail (Bitget-style
+                            // "3 candles visible" view): keep the same distance past the
+                            // flush end so live ticks don't yank the chart back.
+                            let overscroll = max(oldContentOffsetX - oldFlushEnd, 0)
+                            self.klineView.reloadContentOffset(self.klineView.endContentOffsetX + overscroll)
                         } else if previousCount == 0 && newCount > 0 && self.configManager.shouldScrollToEnd {
                             // Initial data load: pin to the newest candle. If the view doesn't have a
                             // real width yet, defer to layoutSubviews so the first render still lands

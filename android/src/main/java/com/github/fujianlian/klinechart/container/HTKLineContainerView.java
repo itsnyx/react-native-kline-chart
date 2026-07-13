@@ -102,7 +102,9 @@ public class HTKLineContainerView extends RelativeLayout {
         klineView.setMTextSize(klineView.configManager.candleTextFontSize);
         klineView.setMTextColor(klineView.configManager.candleTextColor);
         klineView.reloadColor();
-        Boolean isEnd = klineView.getScrollOffset() >= klineView.getEndScrollX();
+        int oldScrollOffset = klineView.getScrollOffset();
+        int oldEndScrollX = klineView.getEndScrollX();
+        Boolean isEnd = oldScrollOffset >= oldEndScrollX;
         if (configManager.suppressScrollToEndOnce) {
             // A prepend of older candles just anchored the scroll position and started
             // an animated rescale in setModelArray. Use the animated notify so this
@@ -113,7 +115,11 @@ public class HTKLineContainerView extends RelativeLayout {
         } else {
             klineView.notifyChanged();
             if (isEnd || klineView.configManager.shouldScrollToEnd) {
-                klineView.setScrollX(klineView.getEndScrollX());
+                // Preserve any overscroll into the right tail so config reloads
+                // don't yank an overscrolled chart back to the resting position.
+                int overscroll = Math.max(oldScrollOffset - oldEndScrollX, 0);
+                int target = klineView.getEndScrollX() + overscroll;
+                klineView.setScrollX(Math.min(target, klineView.getMaxScrollX()));
             }
         }
 

@@ -25,7 +25,28 @@ public class ValueFormatter implements IValueFormatter {
     }
 
     public String formatVolume(float value) {
-        return this._format(value, false, true);
+        return abbreviate(value, this.volumeRightLength);
+    }
+
+    /**
+     * Abbreviates large values Bitget-style (55.66K / 202.08M / 1.25B); values under
+     * 1000 keep the regular fixed-precision formatting.
+     */
+    public static String abbreviate(float value, int rightLength) {
+        if (Float.isNaN(value) || Float.isInfinite(value)) {
+            return "0";
+        }
+        float abs = Math.abs(value);
+        if (abs >= 1_000_000_000f) {
+            return format(value / 1_000_000_000f, 2, true) + "B";
+        }
+        if (abs >= 1_000_000f) {
+            return format(value / 1_000_000f, 2, true) + "M";
+        }
+        if (abs >= 1_000f) {
+            return format(value / 1_000f, 2, true) + "K";
+        }
+        return format(value, rightLength, true);
     }
 
     public static String format(float value, int rightLength, boolean fillzero) {

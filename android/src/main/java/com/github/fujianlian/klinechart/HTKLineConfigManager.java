@@ -177,6 +177,18 @@ public class HTKLineConfigManager {
     // end, so the latest candle isn't glued to the price axis. Configurable from JS.
     public float rightPaddingCandles = 3;
 
+    // Minimum number of candles kept visible when the user overscrolls toward the present
+    // (Bitget-style: you can drag until only this many candles remain on screen).
+    public float minVisibleCandles = 3;
+
+    // Real-time bid/ask labels drawn on the close-price line. Set via the lightweight
+    // `bidAsk` prop (NOT optionList) so per-tick updates don't reload the full config.
+    public boolean showBidAsk = false;
+    public float bidPrice = 0;
+    public float askPrice = 0;
+    public String bidText = "Bid";
+    public String askText = "Ask";
+
     public float itemWidth = 9;
 
     public float candleWidth = 7;
@@ -614,6 +626,7 @@ public class HTKLineConfigManager {
         this.minuteLineColor = ((Number) configList.get("minuteLineColor")).intValue();
         this.paddingRight = ((Number)configList.get("paddingRight")).floatValue();
         this.rightPaddingCandles = ((Number)this.getOrDefault(configList, "rightPaddingCandles", 3.0)).floatValue();
+        this.minVisibleCandles = ((Number)this.getOrDefault(configList, "minVisibleCandles", 3.0)).floatValue();
         this.paddingTop = ((Number)configList.get("paddingTop")).floatValue();
         this.paddingBottom = ((Number)configList.get("paddingBottom")).floatValue();
         this.itemWidth = ((Number)configList.get("itemWidth")).floatValue();

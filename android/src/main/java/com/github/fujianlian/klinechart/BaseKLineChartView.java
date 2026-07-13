@@ -323,8 +323,17 @@ public abstract class BaseKLineChartView extends ScrollAndScaleView implements D
     @Override
     protected void onSizeChanged(int w, int h, int oldw, int oldh) {
         super.onSizeChanged(w, h, oldw, oldh);
+        // "At end" is measured against the resting flush position with the OLD
+        // width. On a resize (e.g. rotation to landscape) a chart that was
+        // pinned to the newest candle must stay pinned; without this the scroll
+        // clamp lands on getMaxScrollX(), exposing the right-padding tail as a
+        // blank gap between the last candle and the price axis.
+        boolean wasAtEnd = oldw > 0 && getScrollOffset() >= endScrollXForWidth(oldw);
         this.mWidth = w;
         notifyChanged();
+        if (wasAtEnd && w != oldw) {
+            setScrollX(getEndScrollX());
+        }
     }
 
 
@@ -370,20 +379,33 @@ public abstract class BaseKLineChartView extends ScrollAndScaleView implements D
         }
         mChildRects = new ArrayList<>();
 
+        float childFlex = 1 - configManager.mainFlex - configManager.volumeFlex;
         // When volume is hidden, merge volumeFlex into the main chart so the main area expands
         // and the child area remains the same height.
         int mMainHeight = (int) (allHeight * (configManager.mainFlex + (showVolume ? 0f : configManager.volumeFlex)));
-        int mVolHeight = showVolume ? (int) (allHeight * configManager.volumeFlex) : 0;
-        int mChildHeight = (int) (allHeight * (1 - configManager.mainFlex - configManager.volumeFlex));
+        // When volume is shown but there is NO child oscillator, the child area
+        // would sit empty — give its share to the volume panel so volume renders
+        // large and fully visible (critical on short landscape viewports where
+        // the base volumeFlex alone is too small to be usable).
+        boolean mergeChildIntoVol = showVolume && !isShowChild;
+        int mVolHeight = showVolume
+                ? (int) (allHeight * (configManager.volumeFlex + (mergeChildIntoVol ? childFlex : 0f)))
+                : 0;
+        int mChildHeight = (int) (allHeight * (mergeChildIntoVol ? 0f : childFlex));
+
+        // Inter-panel gap is a fixed pixel value tuned for tall portrait charts;
+        // on short viewports it can exceed a panel's own flex height and invert
+        // (clip) the volume rect, so clamp it to leave a usable panel body.
+        int volGap = showVolume ? Math.min(mChildPadding, Math.max(0, mVolHeight - 16)) : mChildPadding;
 
         mMainRect = new Rect(0, mTopPadding - textHeight, mWidth, mMainHeight - textHeight);
         if (showVolume) {
-            mVolRect = new Rect(
-                    0,
-                    mMainRect.bottom + textHeight + mChildPadding,
-                    mWidth,
-                    mMainRect.bottom + textHeight + mVolHeight
-            );
+            int volTop = mMainRect.bottom + textHeight + volGap;
+            int volBottom = mMainRect.bottom + textHeight + mVolHeight;
+            if (volBottom > allHeight) {
+                volBottom = allHeight;
+            }
+            mVolRect = new Rect(0, volTop, mWidth, volBottom);
             mChildRect = new Rect(0, mVolRect.bottom + mChildPadding, mWidth, mVolRect.bottom + mChildHeight);
         } else {
             // Collapse volume rect to a zero-height separator at the end of the main chart.
@@ -395,7 +417,7 @@ public abstract class BaseKLineChartView extends ScrollAndScaleView implements D
             mChildRect.top = mVolRect.bottom;
             mChildRect.bottom = mVolRect.bottom;
         }
-        
+
     }
 
     @Override
@@ -772,6 +794,9 @@ public abstract class BaseKLineChartView extends ScrollAndScaleView implements D
                 canvas.drawText(countdownText, cdX, cdY, mClosePriceRightTextPaint);
             }
 
+            // --- Real-time bid/ask labels (Bitget style), left of the price pill ---
+            drawBidAskLabels(canvas, y, pillRect.left - 12);
+
             if (isMinute) {
                 int lottieWidth = lottieDrawable.getIntrinsicWidth();
                 int lottieHeight = lottieDrawable.getIntrinsicHeight();
@@ -783,6 +808,52 @@ public abstract class BaseKLineChartView extends ScrollAndScaleView implements D
 
         }
 
+    }
+
+    /**
+     * Draws the real-time Ask (above) and Bid (below) outlined labels on the close-price line,
+     * right-aligned against {@code anchorRight}. Enabled via the {@code bidAsk} prop.
+     */
+    private void drawBidAskLabels(Canvas canvas, float lineY, float anchorRight) {
+        if (!configManager.showBidAsk || configManager.bidPrice <= 0 || configManager.askPrice <= 0) {
+            return;
+        }
+        Paint.FontMetrics fm = mClosePriceRightTextPaint.getFontMetrics();
+        float textHeight = fm.descent - fm.ascent;
+        float paddingH = 12;
+        float paddingV = 6;
+        float gap = 6; // distance between the price line and each label box
+        float cornerRadius = 8;
+
+        for (int i = 0; i < 2; i++) {
+            boolean isAsk = i == 0;
+            float price = isAsk ? configManager.askPrice : configManager.bidPrice;
+            String label = isAsk ? configManager.askText : configManager.bidText;
+            int color = isAsk ? configManager.decreaseColor : configManager.increaseColor;
+            String title = label + "  " + safeText(mainDraw.getValueFormatter().format(price));
+            float textWidth = mClosePriceRightTextPaint.measureText(title);
+            float boxWidth = textWidth + paddingH * 2;
+            float boxHeight = textHeight + paddingV * 2;
+            float boxX = anchorRight - boxWidth;
+            // Ask sits above the line, Bid below it.
+            float boxY = isAsk ? lineY - gap - boxHeight : lineY + gap;
+            RectF rect = new RectF(boxX, boxY, boxX + boxWidth, boxY + boxHeight);
+
+            mClosePricePointPaint.setColor(configManager.closePriceRightBackgroundColor);
+            mClosePricePointPaint.setStyle(Paint.Style.FILL);
+            canvas.drawRoundRect(rect, cornerRadius, cornerRadius, mClosePricePointPaint);
+
+            mClosePricePointPaint.setColor(color);
+            mClosePricePointPaint.setStyle(Paint.Style.STROKE);
+            mClosePricePointPaint.setStrokeWidth(2);
+            canvas.drawRoundRect(rect, cornerRadius, cornerRadius, mClosePricePointPaint);
+            mClosePricePointPaint.setStrokeWidth(1);
+
+            int savedColor = mClosePriceRightTextPaint.getColor();
+            mClosePriceRightTextPaint.setColor(color);
+            canvas.drawText(title, boxX + paddingH, rect.top + paddingV + textHeight - fm.descent, mClosePriceRightTextPaint);
+            mClosePriceRightTextPaint.setColor(savedColor);
+        }
     }
 
     /**
@@ -1898,12 +1969,15 @@ public abstract class BaseKLineChartView extends ScrollAndScaleView implements D
     }
 
     public int getMaxScrollX() {
-        // The maximum the user can scroll: data length plus a tail of `rightPaddingCandles`
-        // candle widths (configurable from JS). This extra space is reachable by scrolling but
-        // is NOT shown at rest — see getEndScrollX() for the resting "end" position.
+        // The maximum the user can scroll toward the present: far enough that only
+        // `minVisibleCandles` candles remain on screen (Bitget-style overscroll). The legacy
+        // `rightPaddingCandles` tail acts as a floor so small datasets keep their old behavior.
+        // This extra space is reachable by scrolling but is NOT shown at rest — see
+        // getEndScrollX() for the resting "end" position.
         float rightTail = configManager.rightPaddingCandles * mPointWidth;
-        int contentWidth = (int) Math.max((mDataLen + rightTail - (mWidth - configManager.paddingRight) / mScaleX), 0);
-        return Math.max(contentWidth, 0);
+        int paddedMax = (int) Math.max((mDataLen + rightTail - (mWidth - configManager.paddingRight) / mScaleX), 0);
+        int overscrollMax = (int) (mDataLen - configManager.minVisibleCandles * mPointWidth);
+        return Math.max(paddedMax, Math.max(overscrollMax, 0));
     }
 
     /**
@@ -1913,7 +1987,12 @@ public abstract class BaseKLineChartView extends ScrollAndScaleView implements D
      * scroll further right (up to getMaxScrollX) to reveal the padding.
      */
     public int getEndScrollX() {
-        int contentWidth = (int) Math.max((mDataLen - (mWidth - configManager.paddingRight) / mScaleX), 0);
+        return endScrollXForWidth(mWidth);
+    }
+
+    /** getEndScrollX() computed for an arbitrary view width (used across resizes). */
+    private int endScrollXForWidth(int width) {
+        int contentWidth = (int) Math.max((mDataLen - (width - configManager.paddingRight) / mScaleX), 0);
         return Math.max(contentWidth, 0);
     }
 

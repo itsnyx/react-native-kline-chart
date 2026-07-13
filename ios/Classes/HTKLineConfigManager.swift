@@ -221,6 +221,25 @@ class HTKLineConfigManager: NSObject {
     }
 
 
+    /// Abbreviates large volumes Bitget-style (55.66K / 202.08M / 1.25B); values under
+    /// 1000 keep the regular fixed-precision volume formatting.
+    func formatVolume(_ value: CGFloat) -> String {
+        guard value.isFinite else {
+            return "0"
+        }
+        let absValue = abs(value)
+        if absValue >= 1_000_000_000 {
+            return precision(value / 1_000_000_000, 2) + "B"
+        }
+        if absValue >= 1_000_000 {
+            return precision(value / 1_000_000, 2) + "M"
+        }
+        if absValue >= 1_000 {
+            return precision(value / 1_000, 2) + "K"
+        }
+        return precision(value, volume)
+    }
+
     var candleLineWidth: CGFloat = 0.5
 
     var lineWidth: CGFloat = 1
@@ -232,6 +251,18 @@ class HTKLineConfigManager: NSObject {
     // Empty space (in candle widths) kept to the right of the newest candle when scrolled to the
     // end, so the latest candle isn't glued to the price axis. Configurable from JS.
     var rightPaddingCandles: CGFloat = 3
+
+    // Minimum number of candles kept visible when the user overscrolls toward the present
+    // (Bitget-style: you can drag until only this many candles remain on screen).
+    var minVisibleCandles: CGFloat = 3
+
+    // Real-time bid/ask labels drawn on the close-price line. Set via the lightweight
+    // `bidAsk` prop (NOT optionList) so per-tick updates don't reload the full config.
+    var showBidAsk = false
+    var bidPrice: CGFloat = 0
+    var askPrice: CGFloat = 0
+    var bidText = "Bid"
+    var askText = "Ask"
 
     var paddingBottom: CGFloat = 0
 
@@ -656,6 +687,7 @@ class HTKLineConfigManager: NSObject {
         paddingTop = configList["paddingTop"] as? CGFloat ?? 0
         paddingRight = configList["paddingRight"] as? CGFloat ?? 0
         rightPaddingCandles = configList["rightPaddingCandles"] as? CGFloat ?? 3
+        minVisibleCandles = configList["minVisibleCandles"] as? CGFloat ?? 3
         paddingBottom = configList["paddingBottom"] as? CGFloat ?? 0
         mainFlex = configList["mainFlex"] as? CGFloat ?? 0
         volumeFlex = configList["volumeFlex"] as? CGFloat ?? 0
