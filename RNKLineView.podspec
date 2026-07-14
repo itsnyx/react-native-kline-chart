@@ -1,7 +1,10 @@
+require "json"
+
+package = JSON.parse(File.read(File.join(__dir__, "package.json")))
 
 Pod::Spec.new do |s|
   s.name         = "RNKLineView"
-  s.version      = "0.1.1"
+  s.version      = package["version"]
   s.summary      = "High-performance candlestick chart component for React Native"
   s.description  = <<-DESC
                   A professional K-Line (candlestick) chart library for React Native

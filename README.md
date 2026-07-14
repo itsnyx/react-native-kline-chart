@@ -147,6 +147,16 @@ Each candle in `modelArray` must carry the matching pre-computed field(s): `maLi
 `ichiTenkan/ichiKijun/ichiSpanA/ichiSpanB/ichiChikou`, and `resistR`/`resistS`
 (support & resistance levels, drawn in the bear/bull colors — added in 0.4.1).
 
+**`configList.ichiFuture`** — `{ a: number|null, b: number|null }[]` (added in
+0.4.8, along with indicators rendering in line/minute mode). Ichimoku
+future kumo: the raw Senkou Span A/B pairs of the last displacement window
+(typically 26 bars), projected past the newest candle. Entry `k` is drawn
+`k+1` bars after the last candle, continuing the cloud into the right-side
+overscroll space (scroll right at the chart's end to reveal it). Send `null`
+for a span that has no value yet. Omit (or send `[]`) to disable — e.g. when
+the `ichi` overlay is off. See `computeICHI` in `example/indicators.js` for
+how to build it.
+
 **`configList.candleStyle`** — `"allSolid" | "allHollow" | "upHollow" | "downHollow" | "ohlc"`.
 
 **`configList.coordinateType`** — `"linear" | "percentage" | "log"` (Android). Percentage is

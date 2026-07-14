@@ -1105,6 +1105,12 @@ public abstract class BaseKLineChartView extends ScrollAndScaleView implements D
             }
         }
 
+        // Ichimoku future kumo: continues past the newest candle into the
+        // right-side overscroll space, but only when that edge is on screen.
+        if (mStopIndex == mItemCount - 1 && mainDraw != null) {
+            mainDraw.drawIchiFuture(canvas, this);
+        }
+
         // Native N7: draw each stacked sub-panel in its own rect. Rebinding the
         // child fields per panel lets the existing draw code scale correctly.
         if (isMultiPanel()) {

@@ -300,6 +300,11 @@ class HTKLineConfigManager: NSObject {
     // "vwap", "super", "sar"). Never nil so draw code can call .contains().
     var mainOverlays = [String]()
 
+    // Ichimoku future kumo: raw Senkou span pairs [a, b] projected past the
+    // newest candle (entry k draws k+1 bars after the last candle, .nan = no
+    // value). Empty when ichi is off or the JS bundle predates the feature.
+    var ichiFuture = [[CGFloat]]()
+
     // Native N1: candle body style — allSolid | allHollow | upHollow |
     // downHollow | ohlc. Defaults to solid so behavior is unchanged when absent.
     var candleStyle = "allSolid"
@@ -711,6 +716,11 @@ class HTKLineConfigManager: NSObject {
         indicatorColors = parsedIndicatorColors
         // Phase 8-B: which extra main-chart overlays to draw.
         mainOverlays = (configList["mainOverlays"] as? [String]) ?? [String]()
+        // Ichimoku future kumo points. Defensive: a missing/null span value
+        // becomes .nan, which the draw code skips.
+        ichiFuture = ((configList["ichiFuture"] as? [[String: Any]]) ?? []).map { item in
+            [(item["a"] as? CGFloat) ?? .nan, (item["b"] as? CGFloat) ?? .nan]
+        }
         // Native N1: candle body style.
         candleStyle = (configList["candleStyle"] as? String) ?? "allSolid"
         // Native N2: coordinate type + inverted y-axis.

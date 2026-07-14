@@ -129,34 +129,34 @@ public class MainDraw implements IChartDraw<ICandle> {
 
     @Override
     public void drawTranslated(@Nullable ICandle lastPoint, @NonNull ICandle curPoint, float lastX, float curX, @NonNull Canvas canvas, @NonNull BaseKLineChartView view, int position) {
-        if (view.isMinute) {
-            return;
-        }
-        float closePrice = curPoint.getClosePrice();
-        if (position == view.getItemCount() - 1) {
-            float animated = view.getDisplayedClosePrice();
-            if (!Float.isNaN(animated)) {
-                closePrice = animated;
+        // Line (minute) mode replaces candles with the close-price line drawn in
+        // drawMinuteMinute, but indicators still draw below.
+        if (!view.isMinute) {
+            float closePrice = curPoint.getClosePrice();
+            if (position == view.getItemCount() - 1) {
+                float animated = view.getDisplayedClosePrice();
+                if (!Float.isNaN(animated)) {
+                    closePrice = animated;
+                }
             }
+            drawCandle(view, canvas, curX, curPoint.getHighPrice(), curPoint.getLowPrice(), curPoint.getOpenPrice(), closePrice);
         }
-        drawCandle(view, canvas, curX, curPoint.getHighPrice(), curPoint.getLowPrice(), curPoint.getOpenPrice(), closePrice);
         if (primaryStatus == PrimaryStatus.MA) {
             KLineEntity lastItem = (KLineEntity) lastPoint;
             KLineEntity currentItem = (KLineEntity) curPoint;
             // Defensive: make sure per‑candle maList is present and large enough
-            if (currentItem.maList == null || lastItem.maList == null) {
-                return;
-            }
-            int configSize = view.configManager.maList != null ? view.configManager.maList.size() : 0;
-            int itemSize = Math.min(
-                    Math.min(configSize, currentItem.maList.size()),
-                    lastItem.maList.size()
-            );
-            for (int i = 0; i < itemSize; i++) {
-                HTKLineTargetItem currentTargetItem = (HTKLineTargetItem) currentItem.maList.get(i);
-                HTKLineTargetItem lastTargetItem = (HTKLineTargetItem) lastItem.maList.get(i);
-                primaryPaint.setColor(targetItemColor(view, view.configManager.maList.get(i)));
-                view.drawMainLine(canvas, this.primaryPaint, lastX, lastTargetItem.value, curX, currentTargetItem.value);
+            if (currentItem.maList != null && lastItem.maList != null) {
+                int configSize = view.configManager.maList != null ? view.configManager.maList.size() : 0;
+                int itemSize = Math.min(
+                        Math.min(configSize, currentItem.maList.size()),
+                        lastItem.maList.size()
+                );
+                for (int i = 0; i < itemSize; i++) {
+                    HTKLineTargetItem currentTargetItem = (HTKLineTargetItem) currentItem.maList.get(i);
+                    HTKLineTargetItem lastTargetItem = (HTKLineTargetItem) lastItem.maList.get(i);
+                    primaryPaint.setColor(targetItemColor(view, view.configManager.maList.get(i)));
+                    view.drawMainLine(canvas, this.primaryPaint, lastX, lastTargetItem.value, curX, currentTargetItem.value);
+                }
             }
         } else if (primaryStatus == PrimaryStatus.BOLL) {
             //画boll
@@ -324,6 +324,60 @@ public class MainDraw implements IChartDraw<ICandle> {
         }
     }
 
+    /**
+     * Ichimoku future kumo: the Senkou spans displaced past the newest candle
+     * (from configList.ichiFuture). Called from drawK after the per-candle loop,
+     * in the same scroll-translated canvas, so the cloud continues seamlessly
+     * from the last candle into the right-side overscroll space. Clipped to the
+     * main chart rect so out-of-range values never bleed into other panels.
+     */
+    public void drawIchiFuture(@NonNull Canvas canvas, @NonNull BaseKLineChartView view) {
+        List<String> overlays = view.configManager.mainOverlays;
+        List<float[]> future = view.configManager.ichiFuture;
+        if (overlays == null || !overlays.contains("ichi") || future == null || future.isEmpty()) {
+            return;
+        }
+        int lastIndex = view.getItemCount() - 1;
+        if (lastIndex < 0) {
+            return;
+        }
+        KLineEntity lastItem = (KLineEntity) view.getItem(lastIndex);
+
+        canvas.save();
+        float clipLeft = view.getItemMiddleScrollX(lastIndex);
+        float clipRight = view.getItemMiddleScrollX(lastIndex + future.size());
+        canvas.clipRect(clipLeft, view.getTopPadding(), clipRight, view.getMainBottom());
+
+        float lastA = lastItem.ichiSpanA;
+        float lastB = lastItem.ichiSpanB;
+        float lastX = clipLeft;
+        for (int k = 0; k < future.size(); k++) {
+            float curA = future.get(k)[0];
+            float curB = future.get(k)[1];
+            float curX = view.getItemMiddleScrollX(lastIndex + 1 + k);
+            if (isFinite(curA) && isFinite(lastA) && isFinite(curB) && isFinite(lastB)) {
+                boolean bullish = curA >= curB;
+                int cloud = bullish ? view.configManager.increaseColor : view.configManager.decreaseColor;
+                overlayPaint.setStyle(Paint.Style.FILL);
+                overlayPaint.setColor((cloud & 0x00FFFFFF) | 0x30000000); // ~19% alpha
+                Path path = new Path();
+                path.moveTo(lastX, view.yFromValue(lastA));
+                path.lineTo(curX, view.yFromValue(curA));
+                path.lineTo(curX, view.yFromValue(curB));
+                path.lineTo(lastX, view.yFromValue(lastB));
+                path.close();
+                canvas.drawPath(path, overlayPaint);
+                overlayPaint.setStyle(Paint.Style.STROKE);
+            }
+            drawOverlayLine(view, canvas, view.configManager.indicatorColor("ichi", 2, overlayColor(view, 4)), lastX, lastA, curX, curA);
+            drawOverlayLine(view, canvas, view.configManager.indicatorColor("ichi", 3, overlayColor(view, 5)), lastX, lastB, curX, curB);
+            lastA = curA;
+            lastB = curB;
+            lastX = curX;
+        }
+        canvas.restore();
+    }
+
     /** One colored text segment of a header legend line. */
     private static class LegendSeg {
         final String text;
@@ -379,6 +433,28 @@ public class MainDraw implements IChartDraw<ICandle> {
         // Overlay rows (each indicator on its own line).
         List<String> overlays = view.configManager.mainOverlays;
         if (overlays != null && !overlays.isEmpty()) {
+            if (overlays.contains("ichi")) {
+                List<LegendSeg> row = new ArrayList<>();
+                if (isFinite(point.ichiTenkan)) {
+                    row.add(new LegendSeg("Tenkan:" + view.formatValue(point.ichiTenkan),
+                            view.configManager.indicatorColor("ichi", 0, overlayColor(view, 0))));
+                }
+                if (isFinite(point.ichiKijun)) {
+                    row.add(new LegendSeg("Kijun:" + view.formatValue(point.ichiKijun),
+                            view.configManager.indicatorColor("ichi", 1, overlayColor(view, 3))));
+                }
+                if (isFinite(point.ichiSpanA)) {
+                    row.add(new LegendSeg("SpanA:" + view.formatValue(point.ichiSpanA),
+                            view.configManager.indicatorColor("ichi", 2, overlayColor(view, 4))));
+                }
+                if (isFinite(point.ichiSpanB)) {
+                    row.add(new LegendSeg("SpanB:" + view.formatValue(point.ichiSpanB),
+                            view.configManager.indicatorColor("ichi", 3, overlayColor(view, 5))));
+                }
+                if (!row.isEmpty()) {
+                    rows.add(row);
+                }
+            }
             if (overlays.contains("ema") && point.emaList != null) {
                 List<LegendSeg> row = new ArrayList<>();
                 for (int i = 0; i < point.emaList.size(); i++) {
@@ -430,9 +506,6 @@ public class MainDraw implements IChartDraw<ICandle> {
 
     @Override
     public void drawText(@NonNull Canvas canvas, @NonNull BaseKLineChartView view, int position, float x, float y) {
-        if (view.isMinute) {
-            return;
-        }
         KLineEntity point = (KLineEntity) view.getItem(position);
         List<List<LegendSeg>> rows = buildLegendRows(point, view);
         if (rows.isEmpty()) {

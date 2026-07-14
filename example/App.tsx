@@ -106,7 +106,7 @@ export default function App() {
         : [...prev, id],
     );
 
-  const { model, primary, second, secondLabel, mainOverlays, showVolume } =
+  const { model, primary, second, secondLabel, mainOverlays, ichiFuture, showVolume } =
     useMemo(() => processData(candles, main, sub), [candles, main, sub]);
 
   // The chart reads candle data from the separate `modelArray` prop.
@@ -186,6 +186,7 @@ export default function App() {
       showPlusIcon: false,
       // New capabilities:
       mainOverlays,
+      ichiFuture,
       candleStyle,
       coordinateType: coord,
       invertedView: inverted,
@@ -235,6 +236,7 @@ export default function App() {
     second,
     secondLabel,
     mainOverlays,
+    ichiFuture,
     showVolume,
     candleStyle,
     coord,

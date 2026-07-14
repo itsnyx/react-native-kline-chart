@@ -174,17 +174,17 @@ class HTMainDraw: NSObject, HTKLineDrawProtocol {
 
     func drawLine(_ model: HTKLineModel, _ lastModel: HTKLineModel, _ maxValue: CGFloat, _ minValue: CGFloat, _ baseY: CGFloat, _ height: CGFloat, _ index: Int, _ lastIndex: Int, _ context: CGContext, _ configManager: HTKLineConfigManager) {
         if (configManager.isMinute) {
+            // Line (minute) mode: close-price line instead of candles, but the
+            // primary indicator and overlays below still draw on top of it.
             drawLine(value: model.close, lastValue: lastModel.close, maxValue: maxValue, minValue: minValue, baseY: baseY, height: height, index: index, lastIndex: lastIndex, color: configManager.minuteLineColor, isBezier: true, context: context, configManager: configManager)
-        } else {
-            switch configManager.mainType {
-            case .none:
-                break
-            case .ma:
-                guard !configManager.maList.isEmpty,
-                      !model.maList.isEmpty,
-                      !lastModel.maList.isEmpty else {
-                    return
-                }
+        }
+        switch configManager.mainType {
+        case .none:
+            break
+        case .ma:
+            if !configManager.maList.isEmpty,
+               !model.maList.isEmpty,
+               !lastModel.maList.isEmpty {
                 for (i, itemModel) in configManager.maList.enumerated() {
                     guard i >= 0,
                           i < model.maList.count,
@@ -196,20 +196,20 @@ class HTMainDraw: NSObject, HTKLineDrawProtocol {
                     let color = itemModel.color ?? overlayColor(itemModel.index, configManager)
                     drawLine(value: model.maList[i].value, lastValue: lastModel.maList[i].value, maxValue: maxValue, minValue: minValue, baseY: baseY, height: height, index: index, lastIndex: lastIndex, color: color, isBezier: false, context: context, configManager: configManager)
                 }
-            case .boll:
-                let itemList = [
-                    ["value": model.bollMb, "lastValue": lastModel.bollMb, "color": configManager.indicatorColor("boll", 0, overlayColor(0, configManager))],
-                    ["value": model.bollUp, "lastValue": lastModel.bollUp, "color": configManager.indicatorColor("boll", 1, overlayColor(1, configManager))],
-                    ["value": model.bollDn, "lastValue": lastModel.bollDn, "color": configManager.indicatorColor("boll", 2, overlayColor(2, configManager))],
-                ]
-                for item in itemList {
-                    drawLine(value: item["value"] as? CGFloat ?? 0, lastValue: item["lastValue"] as? CGFloat ?? 0, maxValue: maxValue, minValue: minValue, baseY: baseY, height: height, index: index, lastIndex: lastIndex, color: item["color"] as? UIColor ?? UIColor.orange, isBezier: false, context: context, configManager: configManager)
-                }
             }
-
-            // Phase 8-B: draw additional selected overlays on top of MA/BOLL.
-            drawMainOverlays(model, lastModel, maxValue, minValue, baseY, height, index, lastIndex, context, configManager)
+        case .boll:
+            let itemList = [
+                ["value": model.bollMb, "lastValue": lastModel.bollMb, "color": configManager.indicatorColor("boll", 0, overlayColor(0, configManager))],
+                ["value": model.bollUp, "lastValue": lastModel.bollUp, "color": configManager.indicatorColor("boll", 1, overlayColor(1, configManager))],
+                ["value": model.bollDn, "lastValue": lastModel.bollDn, "color": configManager.indicatorColor("boll", 2, overlayColor(2, configManager))],
+            ]
+            for item in itemList {
+                drawLine(value: item["value"] as? CGFloat ?? 0, lastValue: item["lastValue"] as? CGFloat ?? 0, maxValue: maxValue, minValue: minValue, baseY: baseY, height: height, index: index, lastIndex: lastIndex, color: item["color"] as? UIColor ?? UIColor.orange, isBezier: false, context: context, configManager: configManager)
+            }
         }
+
+        // Phase 8-B: draw additional selected overlays on top of MA/BOLL.
+        drawMainOverlays(model, lastModel, maxValue, minValue, baseY, height, index, lastIndex, context, configManager)
     }
 
     /** Color from the shared palette, wrapping the index; gray if palette empty. */
@@ -333,6 +333,56 @@ class HTMainDraw: NSObject, HTKLineDrawProtocol {
         }
     }
 
+    /**
+     * Ichimoku future kumo: the Senkou spans displaced past the newest candle
+     * (configList.ichiFuture). `lastIndex` is the newest candle's index in the
+     * current drawing space; future bars continue at lastIndex+1, +2, … into
+     * the right-side overscroll space. Clipped to the main chart rect so
+     * out-of-range values never bleed into other panels.
+     */
+    func drawIchiFuture(_ lastModel: HTKLineModel, _ lastIndex: Int, _ maxValue: CGFloat, _ minValue: CGFloat, _ baseY: CGFloat, _ height: CGFloat, _ context: CGContext, _ configManager: HTKLineConfigManager) {
+        let future = configManager.ichiFuture
+        guard configManager.mainOverlays.contains("ichi"), !future.isEmpty else {
+            return
+        }
+        context.saveGState()
+        context.clip(to: CGRect(x: -1e7, y: baseY, width: 2e7, height: height))
+
+        let itemWidth = configManager.itemWidth
+        let paddingHorizontal = (itemWidth - configManager.lineWidth) / 2.0
+        let denom = (maxValue - minValue)
+        let scale = denom == 0 ? 1 : denom / height
+        let px: (Int) -> CGFloat = { CGFloat($0) * itemWidth + paddingHorizontal }
+        let py: (CGFloat) -> CGFloat = { baseY + (maxValue - $0) / scale }
+
+        var lastA = lastModel.ichiSpanA
+        var lastB = lastModel.ichiSpanB
+        var lastI = lastIndex
+        for (k, pair) in future.enumerated() {
+            let curA = pair.count > 0 ? pair[0] : .nan
+            let curB = pair.count > 1 ? pair[1] : .nan
+            let curI = lastIndex + 1 + k
+            if curA.isFinite, lastA.isFinite, curB.isFinite, lastB.isFinite {
+                let bullish = curA >= curB
+                let base = bullish ? configManager.increaseColor : configManager.decreaseColor
+                context.setFillColor(base.withAlphaComponent(0.19).cgColor)
+                context.beginPath()
+                context.move(to: CGPoint(x: px(lastI), y: py(lastA)))
+                context.addLine(to: CGPoint(x: px(curI), y: py(curA)))
+                context.addLine(to: CGPoint(x: px(curI), y: py(curB)))
+                context.addLine(to: CGPoint(x: px(lastI), y: py(lastB)))
+                context.closePath()
+                context.fillPath()
+            }
+            drawIchiLine(curA, lastA, configManager.indicatorColor("ichi", 2, overlayColor(4, configManager)), maxValue, minValue, baseY, height, curI, lastI, context, configManager)
+            drawIchiLine(curB, lastB, configManager.indicatorColor("ichi", 3, overlayColor(5, configManager)), maxValue, minValue, baseY, height, curI, lastI, context, configManager)
+            lastA = curA
+            lastB = curB
+            lastI = curI
+        }
+        context.restoreGState()
+    }
+
     /// Draws one Ichimoku line segment, skipping non-finite endpoints.
     func drawIchiLine(_ value: CGFloat, _ lastValue: CGFloat, _ color: UIColor, _ maxValue: CGFloat, _ minValue: CGFloat, _ baseY: CGFloat, _ height: CGFloat, _ index: Int, _ lastIndex: Int, _ context: CGContext, _ configManager: HTKLineConfigManager) {
         if !value.isFinite || !lastValue.isFinite {
@@ -377,6 +427,24 @@ class HTMainDraw: NSObject, HTKLineDrawProtocol {
         // Overlay rows (each indicator on its own line).
         let overlays = configManager.mainOverlays
         if !overlays.isEmpty {
+            if overlays.contains("ichi") {
+                var row: [(String, UIColor)] = []
+                if model.ichiTenkan.isFinite {
+                    row.append((String(format: "Tenkan:%@", configManager.precision(model.ichiTenkan, configManager.price)), configManager.indicatorColor("ichi", 0, overlayColor(0, configManager))))
+                }
+                if model.ichiKijun.isFinite {
+                    row.append((String(format: "Kijun:%@", configManager.precision(model.ichiKijun, configManager.price)), configManager.indicatorColor("ichi", 1, overlayColor(3, configManager))))
+                }
+                if model.ichiSpanA.isFinite {
+                    row.append((String(format: "SpanA:%@", configManager.precision(model.ichiSpanA, configManager.price)), configManager.indicatorColor("ichi", 2, overlayColor(4, configManager))))
+                }
+                if model.ichiSpanB.isFinite {
+                    row.append((String(format: "SpanB:%@", configManager.precision(model.ichiSpanB, configManager.price)), configManager.indicatorColor("ichi", 3, overlayColor(5, configManager))))
+                }
+                if !row.isEmpty {
+                    rows.append(row)
+                }
+            }
             if overlays.contains("ema") {
                 var row: [(String, UIColor)] = []
                 for (i, item) in model.emaList.enumerated() {
@@ -420,9 +488,6 @@ class HTMainDraw: NSObject, HTKLineDrawProtocol {
     }
 
     func drawText(_ model: HTKLineModel, _ baseX: CGFloat, _ baseY: CGFloat, _ context: CGContext, _ configManager: HTKLineConfigManager) {
-        if configManager.isMinute {
-            return
-        }
         let rows = buildLegendRows(model, configManager)
         if rows.isEmpty {
             return

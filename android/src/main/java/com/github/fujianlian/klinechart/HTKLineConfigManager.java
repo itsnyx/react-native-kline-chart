@@ -289,6 +289,11 @@ public class HTKLineConfigManager {
     // can call .contains() without a guard.
     public List<String> mainOverlays = new ArrayList();
 
+    // Ichimoku future kumo: raw Senkou span pairs {a, b} projected past the
+    // newest candle (entry k draws k+1 bars after the last candle, NaN = no
+    // value). Empty when ichi is off or the JS bundle predates the feature.
+    public List<float[]> ichiFuture = new ArrayList<>();
+
     // Native N1: candle body style — one of allSolid | allHollow | upHollow |
     // downHollow | ohlc. Defaults to solid so behavior is unchanged when absent.
     public String candleStyle = "allSolid";
@@ -788,6 +793,23 @@ public class HTKLineConfigManager {
         } else {
             this.mainOverlays = new ArrayList<String>();
         }
+
+        // Ichimoku future kumo points. Defensive: only {a, b} maps are kept, a
+        // missing/null value becomes NaN (skipped by the draw code).
+        List<float[]> parsedIchiFuture = new ArrayList<>();
+        Object ichiFutureObj = configList.get("ichiFuture");
+        if (ichiFutureObj instanceof List) {
+            for (Object o : (List) ichiFutureObj) {
+                if (o instanceof Map) {
+                    Map map = (Map) o;
+                    parsedIchiFuture.add(new float[]{
+                            numberOrNaN(map.get("a")),
+                            numberOrNaN(map.get("b")),
+                    });
+                }
+            }
+        }
+        this.ichiFuture = parsedIchiFuture;
 
         Object candleStyleObj = configList.get("candleStyle");
         if (candleStyleObj != null) {

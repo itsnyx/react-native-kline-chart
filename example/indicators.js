@@ -158,7 +158,7 @@ const computeSUPER = (d, period = 10, mult = 3) => {
     d[i].superTrendUp = up;
   }
 };
-const computeICHI = (d, tk = 9, kj = 26, sb = 52, ch = 26) => {
+const computeICHI = (d, tk = 9, kj = 26, sb = 52, disp = 26) => {
   const h = highs(d);
   const l = lows(d);
   const mid = (i, p) => {
@@ -168,15 +168,35 @@ const computeICHI = (d, tk = 9, kj = 26, sb = 52, ch = 26) => {
     for (let j = i - p + 1; j <= i; j++) (hi = Math.max(hi, h[j])), (lo = Math.min(lo, l[j]));
     return (hi + lo) / 2;
   };
+  // Raw (undisplaced) spans first; the kumo is then plotted `disp` bars ahead.
+  const spanA = new Array(d.length).fill(NaN);
+  const spanB = new Array(d.length).fill(NaN);
   d.forEach((x, i) => {
     const t = mid(i, tk);
     const k = mid(i, kj);
     x.ichiTenkan = t;
     x.ichiKijun = k;
-    x.ichiSpanA = (t + k) / 2;
-    x.ichiSpanB = mid(i, sb);
-    x.ichiChikou = i + ch < d.length ? NaN : x.close;
+    spanA[i] = (t + k) / 2;
+    spanB[i] = mid(i, sb);
   });
+  d.forEach((x, i) => {
+    // Senkou Span A/B displaced forward: the cloud over candle i was computed
+    // `disp` bars earlier. Chikou is the close displaced backward `disp` bars.
+    x.ichiSpanA = i - disp >= 0 ? spanA[i - disp] : NaN;
+    x.ichiSpanB = i - disp >= 0 ? spanB[i - disp] : NaN;
+    x.ichiChikou = i + disp < d.length ? d[i + disp].close : NaN;
+  });
+  // Future kumo: the raw spans of the last `disp` bars project past the newest
+  // candle. Delivered to native via configList.ichiFuture (null = no value);
+  // entry k is drawn k+1 bars after the last candle.
+  const futureStart = Math.max(0, d.length - disp);
+  d.ichiFuture = [];
+  for (let i = futureStart; i < d.length; i++) {
+    d.ichiFuture.push({
+      a: Number.isNaN(spanA[i]) ? null : spanA[i],
+      b: Number.isNaN(spanB[i]) ? null : spanB[i],
+    });
+  }
 };
 
 // --- sub-chart oscillators --------------------------------------------------
@@ -469,6 +489,8 @@ export const processData = (rawCandles, mainSelected, subSelected) => {
     second,
     secondLabel: secondId ? secondId.toUpperCase() : '',
     mainOverlays,
+    // Future kumo points for the native ichi overlay (empty when ichi is off).
+    ichiFuture: mainSelected.includes('ichi') ? data.ichiFuture || [] : [],
     showVolume: subSelected.includes('vol'),
   };
 };

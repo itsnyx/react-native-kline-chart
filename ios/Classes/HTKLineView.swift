@@ -1327,6 +1327,13 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
                 childDraw?.drawLine(model, lastModel, childMinMaxRange.upperBound, childMinMaxRange.lowerBound, childBaseY, childHeight, i, lastIndex, context, configManager)
             }
         }
+
+        // Ichimoku future kumo: continues past the newest candle into the
+        // right-side overscroll space, but only when that edge is on screen.
+        if visibleRange.upperBound == configManager.modelArray.count - 1,
+           let lastModel = visibleModelArray.last {
+            mainDraw.drawIchiFuture(lastModel, visibleModelArray.count - 1, mainMinMaxRange.upperBound, mainMinMaxRange.lowerBound, mainBaseY, mainHeight, context, configManager)
+        }
     }
 
     func drawText(_ context: CGContext) {
