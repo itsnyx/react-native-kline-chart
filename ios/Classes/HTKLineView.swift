@@ -370,7 +370,11 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
                 let toEndContentOffset = endContentOffsetX + overscroll
                 let distance = abs(contentOffset.x - toEndContentOffset)
                 let animated = distance <= configManager.itemWidth
-                didApplyInitialScrollToEnd = true
+                // Only consume the pending initial scroll-to-end when real data was pinned;
+                // an empty reload must keep the request alive for the first data load.
+                if !configManager.modelArray.isEmpty {
+                    didApplyInitialScrollToEnd = true
+                }
                 reloadContentOffset(toEndContentOffset, animated)
                 scrollViewDidScroll(self)
             } else {
@@ -996,11 +1000,23 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
         didApplyInitialScrollToEnd = true
     }
 
+    /// True while a requested initial scroll-to-end hasn't been applied to real data yet.
+    /// While pending, the chart's offset is transient (often 0) and must not be treated as
+    /// a user position — not for onEndReached, and not as a prepend anchor.
+    var isInitialScrollToEndPending: Bool {
+        return configManager.shouldScrollToEnd && !didApplyInitialScrollToEnd
+    }
+
     private func scrollToEndIfPossible(animated: Bool) {
         guard bounds.size.width > 0 else { return }
         // Rest at the flush end (newest candle against the axis), not the padded max.
         let endOffsetX = endContentOffsetX
-        didApplyInitialScrollToEnd = true
+        // Only consume the pending initial scroll-to-end once there is real data to pin to.
+        // Pinning an empty chart (offset 0) must keep the request alive so the first data
+        // load still lands on the newest candle.
+        if !configManager.modelArray.isEmpty {
+            didApplyInitialScrollToEnd = true
+        }
         setContentOffset(CGPoint(x: endOffsetX, y: 0), animated: animated)
         scrollViewDidScroll(self)
     }
@@ -2114,8 +2130,13 @@ extension HTKLineView: UIScrollViewDelegate {
         // When the very first candle becomes visible, consider that "reached the left edge".
         // Using the computed index is more reliable than a strict contentOffset == 0 check
         // which can miss due to float rounding and padding.
+        //
+        // Never fire before the view has a real width and the requested initial
+        // scroll-to-end has been applied: during mount the offset transiently sits at 0,
+        // which is not the user reaching the left edge. Firing there made the app prepend
+        // older candles at open, whose anchor logic then parked the chart mid-data.
         if visibleStartIndex == 0 {
-            if !hasFiredOnEndReached {
+            if !hasFiredOnEndReached, bounds.size.width > 0, !isInitialScrollToEndPending {
                 hasFiredOnEndReached = true
                 // Mark that the next modelArray update is the result of a "load older
                 // candles" flow so we can keep the user's visible range anchored when

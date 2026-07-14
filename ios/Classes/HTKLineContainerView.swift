@@ -143,6 +143,12 @@ class HTKLineContainerView: UIView {
                         let newCount = self.configManager.modelArray.count
                         let addedCount = max(newCount - previousCount, 0)
 
+                        // While the initial scroll-to-end is still pending, the current offset is
+                        // transient (often 0) and must not be used as a prepend anchor. A spurious
+                        // onEndReached during mount could set loadingMoreFromLeft before the chart
+                        // was ever positioned; anchoring to that offset parked the chart mid-data.
+                        let initialPinPending = self.klineView.isInitialScrollToEndPending && newCount > 0
+
                         // When data is replaced wholesale (initial load, timeframe switch,
                         // large bulk add, or shrink), snap the animated scale values so the
                         // chart doesn't slowly lerp from an unrelated old price range.
@@ -152,14 +158,27 @@ class HTKLineContainerView: UIView {
                         // min/max changes, and we want that vertical rescale to animate
                         // smoothly rather than snap. The scale-lerp self-drives via
                         // setNeedsDisplay until it converges.
-                        if prependedCount == 0
-                            && (previousCount == 0 || dataReplaced || addedCount > 1 || newCount < previousCount) {
+                        if initialPinPending
+                            || (prependedCount == 0
+                            && (previousCount == 0 || dataReplaced || addedCount > 1 || newCount < previousCount)) {
                             self.klineView.resetAnimatedScaleValues()
                         }
 
                         self.klineView.reloadContentSize()
 
-                        if prependedCount > 0 {
+                        if initialPinPending {
+                            // First real positioning: pin to the newest candle. This wins over the
+                            // prepend-anchor path below — before the initial scroll-to-end there is
+                            // no meaningful user position to preserve.
+                            self.klineView.hideLoadingIndicator()
+                            self.configManager.loadingMoreFromLeft = false
+                            if self.klineView.bounds.size.width > 0 {
+                                self.klineView.setContentOffset(CGPoint(x: self.klineView.endContentOffsetX, y: 0), animated: false)
+                                self.klineView.markInitialScrollToEndApplied()
+                            } else {
+                                self.klineView.requestInitialScrollToEnd()
+                            }
+                        } else if prependedCount > 0 {
                             // Shift scroll so the previously visible candles stay anchored,
                             // regardless of where the user scrolled while waiting.
                             self.klineView.hideLoadingIndicator()
