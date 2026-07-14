@@ -147,6 +147,12 @@ public abstract class BaseKLineChartView extends ScrollAndScaleView implements D
 
     private int mSelectedIndex;
 
+    // Change-detection for the app-side crosshair readout (hoverInfoMode ==
+    // "topLayer"). We only emit onCrosshairChange when the visible/index state
+    // actually changes, so this can be polled cheaply from onDraw.
+    private int mLastCrosshairIndex = -1;
+    private boolean mLastCrosshairVisible = false;
+
     private IChartDraw mMainDraw;
     private MainDraw mainDraw;
     private IChartDraw mVolDraw;
@@ -456,6 +462,55 @@ public abstract class BaseKLineChartView extends ScrollAndScaleView implements D
 
         if (mItemCount > 0) {
             drawSelector(canvas);
+        }
+
+        maybeEmitCrosshair();
+    }
+
+    /**
+     * When hoverInfoMode == "topLayer" the native library does NOT draw a hover
+     * info panel — instead it forwards the selected candle to the JS/app side so
+     * the app renders the OHLC readout itself (e.g. in its own header). This is
+     * polled from onDraw but only fires onCrosshairChange when the selection
+     * (visible flag or snapped index) actually changes.
+     */
+    private void maybeEmitCrosshair() {
+        boolean topLayer = configManager != null
+                && "topLayer".equals(configManager.hoverInfoMode);
+
+        if (!topLayer) {
+            // Mode changed away from topLayer while a selection was reported as
+            // visible — emit a single "hidden" so the app clears its readout.
+            if (mLastCrosshairVisible) {
+                mLastCrosshairVisible = false;
+                mLastCrosshairIndex = -1;
+                if (configManager != null && configManager.onCrosshairChange != null) {
+                    configManager.onCrosshairChange.invoke(Boolean.FALSE, -1, null);
+                }
+            }
+            return;
+        }
+
+        boolean visible = isLongPress
+                && mSelectedIndex >= 0
+                && mSelectedIndex < mItemCount;
+
+        if (visible == mLastCrosshairVisible
+                && (!visible || mSelectedIndex == mLastCrosshairIndex)) {
+            return;
+        }
+
+        mLastCrosshairVisible = visible;
+        mLastCrosshairIndex = visible ? mSelectedIndex : -1;
+
+        if (configManager == null || configManager.onCrosshairChange == null) {
+            return;
+        }
+        if (visible) {
+            Object point = getItem(mSelectedIndex);
+            configManager.onCrosshairChange.invoke(Boolean.TRUE, mSelectedIndex, point);
+        } else {
+            configManager.onCrosshairChange.invoke(Boolean.FALSE, -1, null);
         }
     }
 

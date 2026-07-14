@@ -640,10 +640,11 @@ public class MainDraw implements IChartDraw<ICandle> {
         if (view.isMinute) {
             return;
         }
-        // Abstract-on-chart "topLayer": summary strip pinned to the chart top
-        // instead of the floating panel.
+        // "topLayer" mode: the native library no longer draws a hover panel/strip.
+        // Instead BaseKLineChartView forwards the selected candle to the app via
+        // onCrosshairChange, and the app renders the OHLC readout itself (e.g. in
+        // its own header). Draw nothing here so the chart area stays clean.
         if ("topLayer".equals(view.configManager.hoverInfoMode)) {
-            drawTopLayerAbstract(view, canvas);
             return;
         }
         Paint.FontMetrics metrics = mSelectorTextPaint.getFontMetrics();

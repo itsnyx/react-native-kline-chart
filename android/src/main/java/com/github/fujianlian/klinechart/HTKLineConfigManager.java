@@ -96,6 +96,12 @@ public class HTKLineConfigManager {
     // Callback receives: (price: double)
     public Callback onNewOrder;
 
+    // Fired when the crosshair (long-press selector) selection changes while
+    // hoverInfoMode == "topLayer". Lets the JS/app side render the selected
+    // candle's OHLC readout itself instead of the native drawing a strip.
+    // Callback receives: (visible: Boolean, index: Integer, point: KLineEntity|null)
+    public Callback onCrosshairChange;
+
     // Whether to show the "+" icon inside the right-side hover price pill.
     // Controlled from JS via optionList.configList.showPlusIcon (default: true).
     public boolean showPlusIcon = true;

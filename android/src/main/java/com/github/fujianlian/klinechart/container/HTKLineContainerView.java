@@ -293,6 +293,37 @@ public class HTKLineContainerView extends RelativeLayout {
             }
         };
 
+        // Fired (in "topLayer" hover mode) when the crosshair selection changes.
+        // args: (visible: Boolean, index: Integer, point: KLineEntity|null)
+        configManager.onCrosshairChange = new Callback() {
+            @Override
+            public void invoke(Object... args) {
+                boolean visible = args != null && args.length > 0
+                        && Boolean.TRUE.equals(args[0]);
+                int index = args != null && args.length > 1 && args[1] instanceof Number
+                        ? ((Number) args[1]).intValue() : -1;
+                WritableMap map = Arguments.createMap();
+                map.putBoolean("visible", visible);
+                map.putInt("index", index);
+                if (visible && args != null && args.length > 2
+                        && args[2] instanceof KLineEntity) {
+                    KLineEntity point = (KLineEntity) args[2];
+                    map.putString("time", point.Date != null ? point.Date : "");
+                    map.putDouble("id", point.id);
+                    map.putDouble("open", point.Open);
+                    map.putDouble("high", point.High);
+                    map.putDouble("low", point.Low);
+                    map.putDouble("close", point.Close);
+                    map.putDouble("volume", point.Volume);
+                }
+                reactContext.getJSModule(RCTEventEmitter.class).receiveEvent(
+                        id,
+                        RNKLineView.onCrosshairChangeKey,
+                        map
+                );
+            }
+        };
+
         int reloadIndex = configManager.shouldReloadDrawItemIndex;
         if (reloadIndex >= 0 && reloadIndex < klineView.drawContext.drawItemList.size()) {
             HTDrawItem drawItem = klineView.drawContext.drawItemList.get(reloadIndex);

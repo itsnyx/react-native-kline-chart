@@ -16,6 +16,12 @@ class HTKLineContainerView: UIView {
     // Fired when the user taps the hover price pill on the right side (long-press selector).
     // JS receives: { price: number }
     @objc var onNewOrder: RCTBubblingEventBlock?
+
+    // Fired (in "topLayer" hover mode) when the crosshair selection changes, so
+    // the app can render the selected candle's OHLC readout itself instead of the
+    // native drawing a strip. JS receives:
+    // { visible: bool, index: number, time, id, open, high, low, close, volume }
+    @objc var onCrosshairChange: RCTBubblingEventBlock?
     
     @objc var onDrawItemComplete: RCTBubblingEventBlock?
 

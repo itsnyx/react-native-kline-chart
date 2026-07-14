@@ -83,6 +83,7 @@ For a complete working example with all features (theme switching, indicator con
 | `onDrawPointComplete` | `function` | No | Called when a drawing point is placed |
 | `onEndReached` | `function` | No | Called when user scrolls to left edge (load more history) |
 | `onNewOrder` | `function` | No | Called with the hovered price when user triggers a new order action |
+| `onCrosshairChange` | `function` | No | Fired when `configList.hoverInfoMode === "topLayer"`: instead of drawing a hover panel, the chart reports the selected candle so the app can render the OHLC readout itself. Payload: `{ visible, index, time, id, open, high, low, close, volume }` (`visible: false` clears it) |
 
 ## optionList Structure
 

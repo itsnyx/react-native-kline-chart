@@ -24,6 +24,12 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
 
     var selectedIndex = -1
 
+    /// Change-detection for the app-side crosshair readout (hoverInfoMode ==
+    /// "topLayer"). onCrosshairChange only fires when the visible/index state
+    /// actually changes, so it can be polled cheaply from draw().
+    private var lastCrosshairIndex = -1
+    private var lastCrosshairVisible = false
+
     /// Light haptic fired when the selected candle index changes during long-press hover
     /// (gated by configManager.hapticOnSelection).
     private lazy var selectionFeedbackGenerator = UIImpactFeedbackGenerator(style: .light)
@@ -529,7 +535,51 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
             drawSelectedTime(context)
         })
 
-        
+        maybeEmitCrosshair()
+    }
+
+    /// When hoverInfoMode == "topLayer" the native library does NOT draw a hover
+    /// info panel — instead it forwards the selected candle to the app via
+    /// onCrosshairChange so the app renders the OHLC readout itself. Polled from
+    /// draw(), but only fires when the selection (visible flag or index) changes.
+    private func maybeEmitCrosshair() {
+        let topLayer = configManager.hoverInfoMode == "topLayer"
+
+        if !topLayer {
+            if lastCrosshairVisible {
+                lastCrosshairVisible = false
+                lastCrosshairIndex = -1
+                containerView?.onCrosshairChange?(["visible": false, "index": -1])
+            }
+            return
+        }
+
+        let visible = visibleRange.contains(selectedIndex)
+        if visible == lastCrosshairVisible,
+           !visible || selectedIndex == lastCrosshairIndex {
+            return
+        }
+
+        lastCrosshairVisible = visible
+        lastCrosshairIndex = visible ? selectedIndex : -1
+
+        guard visible else {
+            containerView?.onCrosshairChange?(["visible": false, "index": -1])
+            return
+        }
+
+        let model = visibleModelArray[selectedIndex - visibleRange.lowerBound]
+        containerView?.onCrosshairChange?([
+            "visible": true,
+            "index": selectedIndex,
+            "time": model.dateString,
+            "id": Double(model.id),
+            "open": Double(model.open),
+            "high": Double(model.high),
+            "low": Double(model.low),
+            "close": Double(model.close),
+            "volume": Double(model.volume),
+        ])
     }
 
     func calculateBaseHeight() {
@@ -1829,10 +1879,10 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
         }
         let itemList = visibleModelArray[selectedIndex - visibleRange.lowerBound].selectedItemList
 
-        // Abstract-on-chart "topLayer": summary strip pinned to the chart top
-        // instead of the floating panel.
+        // "topLayer" mode: the native library no longer draws a hover panel/strip.
+        // Instead maybeEmitCrosshair() forwards the selected candle to the app via
+        // onCrosshairChange, and the app renders the OHLC readout itself.
         if configManager.hoverInfoMode == "topLayer" {
-            drawTopLayerAbstract(context, itemList: itemList)
             return
         }
 

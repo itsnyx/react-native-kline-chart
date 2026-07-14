@@ -43,6 +43,10 @@ public class RNKLineView extends SimpleViewManager<HTKLineContainerView> {
     // Fired when the user taps the hover price pill (long-press selector)
     public static String onNewOrderKey = "onNewOrder";
 
+    // Fired (in "topLayer" hover mode) when the crosshair selection changes, so
+    // the app can render the selected candle's OHLC readout itself.
+    public static String onCrosshairChangeKey = "onCrosshairChange";
+
     @Nonnull
     @Override
     public String getName() {
@@ -65,6 +69,7 @@ public class RNKLineView extends SimpleViewManager<HTKLineContainerView> {
         builder.put(onEndReachedKey, MapBuilder.of("registrationName", onEndReachedKey));
         builder.put(onDrawItemMoveKey, MapBuilder.of("registrationName", onDrawItemMoveKey));
         builder.put(onNewOrderKey, MapBuilder.of("registrationName", onNewOrderKey));
+        builder.put(onCrosshairChangeKey, MapBuilder.of("registrationName", onCrosshairChangeKey));
         return builder.build();
 	}
 

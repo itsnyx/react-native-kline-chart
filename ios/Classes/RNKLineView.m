@@ -7,6 +7,8 @@ RCT_EXPORT_VIEW_PROPERTY(onDrawItemDidTouch, RCTBubblingEventBlock)
 
 RCT_EXPORT_VIEW_PROPERTY(onNewOrder, RCTBubblingEventBlock)
 
+RCT_EXPORT_VIEW_PROPERTY(onCrosshairChange, RCTBubblingEventBlock)
+
 RCT_EXPORT_VIEW_PROPERTY(onDrawItemComplete, RCTBubblingEventBlock)
 
 RCT_EXPORT_VIEW_PROPERTY(onDrawItemMove, RCTBubblingEventBlock)
