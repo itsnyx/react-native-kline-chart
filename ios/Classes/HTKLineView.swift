@@ -175,6 +175,11 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
     var volumeRange: ClosedRange<CGFloat> = 0...0
     var allWidth: CGFloat = 0
     var allHeight: CGFloat = 0
+    /// Size the panel stack was last laid out against, held while an optionList
+    /// reload is in flight so a resize can't be divided by a stale panel list.
+    /// See calculateBaseHeight().
+    private var lastLaidOutAllHeight: CGFloat = 0
+    private var lastLaidOutAllWidth: CGFloat = 0
     var mainMinMaxRange = Range<CGFloat>.init(uncheckedBounds: (lower: 0, upper: 0))
     var textHeight: CGFloat  = 0
     var mainBaseY: CGFloat  = 0
@@ -618,8 +623,26 @@ class HTKLineView: UIScrollView, UIGestureRecognizerDelegate {
         let volumeBoundary = mainBoundary + (configManager.showVolume ? configManager.volumeFlex + volExtra : 0)
         self.volumeRange = mainBoundary...volumeBoundary
         
-        self.allHeight = self.bounds.size.height - configManager.paddingBottom
-        self.allWidth = self.bounds.size.width
+        // An optionList reload still in flight means the frame is already new while
+        // the panel list below (childDrawList/showVolume) is still the old one.
+        // Dividing the NEW height by the OLD panel count makes the main chart jump
+        // a panel's worth and snap back when the parse lands — the same race
+        // Android guards in onSizeChanged. Hold the height that matches the panel
+        // list we can actually see; the reload's own redraw adopts the new one, so
+        // the layout moves exactly once. Width changes (rotation) are never frozen:
+        // they must re-fit immediately, and layoutSubviews re-pins the scroll.
+        let liveAllHeight = self.bounds.size.height - configManager.paddingBottom
+        let liveAllWidth = self.bounds.size.width
+        if configManager.pendingOptionListReloads > 0
+            && lastLaidOutAllHeight > 0
+            && liveAllWidth == lastLaidOutAllWidth {
+            self.allHeight = lastLaidOutAllHeight
+        } else {
+            self.allHeight = liveAllHeight
+            self.lastLaidOutAllHeight = liveAllHeight
+        }
+        self.allWidth = liveAllWidth
+        self.lastLaidOutAllWidth = liveAllWidth
         
         // Auto range (includes MA/BOLL etc), then optionally override with fixed y-axis scale.
         let autoMainRange = mainDraw.minMaxRange(visibleModelArray, configManager)

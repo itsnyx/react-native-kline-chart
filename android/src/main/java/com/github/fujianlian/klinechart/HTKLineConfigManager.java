@@ -47,6 +47,20 @@ public class HTKLineConfigManager {
      */
     public boolean suppressScrollToEndOnce = false;
 
+    /**
+     * Number of `optionList` updates that have been handed to a background parse
+     * but whose `reloadConfigManager` has not run yet.
+     *
+     * React applies a container resize synchronously while this prop's JSON is
+     * parsed off the UI thread, so the two halves of a single change can land in
+     * different frames. Adding a stacked sub-panel does exactly that: the taller
+     * container arrives first and the new panel list only follows once the parse
+     * posts back. `BaseKLineChartView.onSizeChanged` reads this to skip the
+     * relayout it would otherwise perform against the stale panel list.
+     */
+    public final java.util.concurrent.atomic.AtomicInteger pendingOptionListReloads =
+            new java.util.concurrent.atomic.AtomicInteger(0);
+
 
 	public int shotBackgroundColor = Color.RED;
 

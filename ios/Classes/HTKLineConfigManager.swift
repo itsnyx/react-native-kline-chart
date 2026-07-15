@@ -145,6 +145,17 @@ class HTKLineConfigManager: NSObject {
 
     var subPanelHeight: CGFloat = 0
 
+    /// Number of `optionList` updates handed to the background parse whose
+    /// `reloadConfigManager` has not run yet.
+    ///
+    /// React applies a frame change synchronously while this prop's JSON is parsed
+    /// off the main thread, so the two halves of one change can land in different
+    /// frames. Adding a stacked sub-panel does exactly that: the taller frame
+    /// arrives first and `secondList` only follows once the parse hops back.
+    /// `HTKLineView.calculateBaseHeight` reads this to avoid sizing the new height
+    /// against the stale panel list. Mutated on the main thread only.
+    var pendingOptionListReloads = 0
+
     // Native N7: index of the generic sub-panel currently being drawn, so
     // HTGenericOscillatorDraw can pick the right per-candle subLinesList entry.
     // -1 means "single panel — use the legacy `subLines`".

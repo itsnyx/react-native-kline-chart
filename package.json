@@ -1,6 +1,6 @@
 {
   "name": "@itsnyx/react-native-kline-chart",
-  "version": "0.4.9",
+  "version": "0.4.10",
   "description": "High-performance candlestick (K-Line) chart component for React Native with interactive drawing tools, technical indicators, and real-time data support",
   "main": "index.js",
   "scripts": {

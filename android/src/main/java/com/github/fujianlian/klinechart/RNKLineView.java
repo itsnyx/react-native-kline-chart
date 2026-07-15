@@ -102,18 +102,39 @@ public class RNKLineView extends SimpleViewManager<HTKLineContainerView> {
             return;
         }
         
+        // Mark the reload in flight for as long as the parse + apply takes. A
+        // container resize can ride the same React commit (adding a sub-panel
+        // grows the chart AND changes the panel list) and is applied
+        // synchronously, so onSizeChanged needs to know the panel list it can
+        // see is about to be replaced.
+        final HTKLineConfigManager configManager = containerView.configManager;
+        configManager.pendingOptionListReloads.incrementAndGet();
         new Thread(new Runnable() {
             @Override
             public void run() {
-                int disableDecimalFeature = JSON.DEFAULT_PARSER_FEATURE & ~Feature.UseBigDecimal.getMask();
-                Map optionMap = (Map)JSON.parse(optionList, disableDecimalFeature);
-                containerView.configManager.reloadOptionList(optionMap);
-                containerView.post(new Runnable() {
-                    @Override
-                    public void run() {
-                        containerView.reloadConfigManager();
+                boolean posted = false;
+                try {
+                    int disableDecimalFeature = JSON.DEFAULT_PARSER_FEATURE & ~Feature.UseBigDecimal.getMask();
+                    Map optionMap = (Map)JSON.parse(optionList, disableDecimalFeature);
+                    configManager.reloadOptionList(optionMap);
+                    posted = containerView.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            try {
+                                containerView.reloadConfigManager();
+                            } finally {
+                                configManager.pendingOptionListReloads.decrementAndGet();
+                            }
+                        }
+                    });
+                } finally {
+                    // Parse threw, or the view is gone and will never run the
+                    // runnable — either way no reload is coming, so the flag must
+                    // not stay raised and freeze onSizeChanged's relayout.
+                    if (!posted) {
+                        configManager.pendingOptionListReloads.decrementAndGet();
                     }
-                });
+                }
             }
         }).start();
     }

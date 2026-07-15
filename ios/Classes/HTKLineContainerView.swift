@@ -40,19 +40,31 @@ class HTKLineContainerView: UIView {
                 return
             }
             
+            // Mark the reload in flight for as long as the parse + apply takes. A
+            // frame change can ride the same React commit (adding a sub-panel grows
+            // the chart AND changes the panel list) and is applied synchronously, so
+            // the view needs to know the panel list it can see is about to be
+            // replaced. Balanced on every path below — parse failures included, or
+            // the flag would stay raised and freeze the panel layout for good.
+            configManager.pendingOptionListReloads += 1
             RNKLineView.queue.async { [weak self] in
+                var optionListDict: [String: Any]? = nil
                 do {
-                    guard let optionListData = optionList.data(using: .utf8),
-                          let optionListDict = try JSONSerialization.jsonObject(with: optionListData, options: .allowFragments) as? [String: Any] else {
-                        return
-                    }
-                    self?.configManager.reloadOptionList(optionListDict)
-                    DispatchQueue.main.async {
-                        guard let self = self else { return }
-                        self.reloadConfigManager(self.configManager)
+                    if let optionListData = optionList.data(using: .utf8) {
+                        optionListDict = try JSONSerialization.jsonObject(with: optionListData, options: .allowFragments) as? [String: Any]
                     }
                 } catch {
                     print("Error parsing optionList: \(error)")
+                }
+                if let optionListDict = optionListDict {
+                    self?.configManager.reloadOptionList(optionListDict)
+                }
+                DispatchQueue.main.async {
+                    guard let self = self else { return }
+                    self.configManager.pendingOptionListReloads -= 1
+                    if optionListDict != nil {
+                        self.reloadConfigManager(self.configManager)
+                    }
                 }
             }
         }

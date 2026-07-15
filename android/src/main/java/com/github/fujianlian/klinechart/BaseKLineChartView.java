@@ -336,6 +336,19 @@ public abstract class BaseKLineChartView extends ScrollAndScaleView implements D
         // blank gap between the last candle and the price axis.
         boolean wasAtEnd = oldw > 0 && getScrollOffset() >= endScrollXForWidth(oldw);
         this.mWidth = w;
+        // Height-only resize while an optionList parse is still in flight: the
+        // container just grew (or shrank) because JS added or removed a stacked
+        // sub-panel, but the matching panel list is still being parsed off the UI
+        // thread. Laying out now would divide the NEW height by the OLD panel
+        // count, so the main chart would jump a panel's worth and snap back when
+        // the parse lands. Keep the current rects — the pending
+        // reloadConfigManager performs the single correct relayout, and until it
+        // does nothing moves. Width changes (rotation) still relayout here: they
+        // need the scroll re-pin below.
+        if (w == oldw && configManager != null
+                && configManager.pendingOptionListReloads.get() > 0) {
+            return;
+        }
         notifyChanged();
         if (wasAtEnd && w != oldw) {
             setScrollX(getEndScrollX());
